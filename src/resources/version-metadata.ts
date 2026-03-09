@@ -1,0 +1,12 @@
+import type { Bindable, Config } from '../types'
+
+export class VersionMetadata implements Bindable {
+	configureBinding(args: { config: Config; binding: string; env: string }): Config {
+		return {
+			...args.config,
+			version_metadata: {
+				binding: args.binding,
+			},
+		}
+	}
+}

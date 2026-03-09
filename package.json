@@ -1,0 +1,27 @@
+{
+	"name": "oblaka",
+	"version": "0.0.1",
+	"main": "./src/index.ts",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"format": "dprint fmt",
+		"format:check": "dprint check",
+		"lint": "biome check ./src",
+		"lint:fix": "biome check --write ./src",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.6",
+		"@cloudflare/workers-types": "^4.20260307.1",
+		"@types/bun": "latest",
+		"dprint": "^0.52.0"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"@cloudflare/workers-utils": "^0.12.0",
+		"jsonc-parser": "^3.3.1"
+	}
+}

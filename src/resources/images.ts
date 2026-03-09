@@ -1,0 +1,10 @@
+import type { Bindable, Config } from '../types'
+
+export class Images implements Bindable {
+	configureBinding(args: { config: Config; binding: string; env: string }): Config {
+		return {
+			...args.config,
+			images: { binding: args.binding },
+		}
+	}
+}
