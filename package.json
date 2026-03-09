@@ -1,9 +1,17 @@
 {
-	"name": "oblaka",
+	"name": "oblaka-iac",
 	"version": "0.0.1",
 	"main": "./src/index.ts",
 	"type": "module",
-	"private": true,
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/contember/oblaka"
+	},
+	"files": [
+		"src/",
+		"LICENSE.md"
+	],
 	"scripts": {
 		"format": "dprint fmt",
 		"format:check": "dprint check",
