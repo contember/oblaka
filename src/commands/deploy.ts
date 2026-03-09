@@ -81,10 +81,12 @@ export class CloudflareDeployExecutor implements ResourceApplier {
 								client: this.client,
 							},
 						})
+						delete this.state.resources[idString]
 					})
+				} else {
+					delete this.state.resources[idString]
 				}
 				this.log(`Destroyed ${resource}:${id}`)
-				delete this.state.resources[idString]
 			}
 		}
 	}

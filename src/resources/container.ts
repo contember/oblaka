@@ -56,7 +56,7 @@ export class Container implements BindableResource<ContainerState> {
 					]),
 			],
 			containers: [
-				...((args.config as any).containers ?? []),
+				...(args.config.containers ?? []),
 				{
 					class_name: this.options.className,
 					name: args.state?.name ?? this.options.name,
@@ -68,7 +68,7 @@ export class Container implements BindableResource<ContainerState> {
 				},
 			],
 			durable_objects: {
-				...(args.config.durable_objects ?? []),
+				...(args.config.durable_objects ?? {}),
 				bindings: [
 					...(args.config.durable_objects?.bindings ?? []),
 					{

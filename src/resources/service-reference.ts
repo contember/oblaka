@@ -11,7 +11,7 @@ export class ServiceReference implements Bindable {
 	) {}
 
 	configureBinding(args: { config: Config; binding: string; env: string }): Config {
-		const remoteName = `${args.env}-${this.serviceName}`
+		const remoteName = args.env === 'local' ? this.serviceName : `${args.env}-${this.serviceName}`
 		return {
 			...args.config,
 			services: [

@@ -1,6 +1,7 @@
 import type { BindableResource, Config, Context, ResourceDestroyer } from '../types'
 
 export interface QueueState {
+	id: string
 	name: string
 }
 
@@ -47,11 +48,12 @@ export class Queue implements BindableResource<QueueState> {
 
 		if (args.dryRun) {
 			return {
+				id: 'dry-run-id-' + Math.random().toString(36).substring(2, 11),
 				name: remoteName,
 			}
 		}
 
-		await args.context.client.fetch({
+		const result = await args.context.client.fetch<{ queue_id: string }>({
 			url: `/queues`,
 			method: 'POST',
 			body: {
@@ -59,6 +61,7 @@ export class Queue implements BindableResource<QueueState> {
 			},
 		})
 		return {
+			id: result.queue_id,
 			name: remoteName,
 		}
 	}
@@ -125,7 +128,7 @@ export class Queue implements BindableResource<QueueState> {
 
 export const QueueDestroyer: ResourceDestroyer<QueueState> = async (args): Promise<void> => {
 	await args.context.client.fetch({
-		url: `/queues/${args.state.name}`,
+		url: `/queues/${args.state.id}`,
 		method: 'DELETE',
 	})
 }

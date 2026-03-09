@@ -1,4 +1,4 @@
-import type { BindableResource, Config, Context } from '../types'
+import type { BindableResource, Config } from '../types'
 
 export interface AnalyticsEngineState {
 	name: string
@@ -26,7 +26,7 @@ export class AnalyticsEngine implements BindableResource<AnalyticsEngineState> {
 		return {
 			...args.config,
 			analytics_engine_datasets: [
-				...(args.config as any)?.analytics_engine_datasets ?? [],
+				...(args.config.analytics_engine_datasets ?? []),
 				{
 					binding: args.binding,
 					dataset: this.options.name,
@@ -35,7 +35,7 @@ export class AnalyticsEngine implements BindableResource<AnalyticsEngineState> {
 		}
 	}
 
-	async apply(args: { state?: AnalyticsEngineState; context: Context; dryRun: boolean }): Promise<AnalyticsEngineState> {
+	async apply(args: { state?: AnalyticsEngineState }): Promise<AnalyticsEngineState> {
 		// Analytics Engine datasets are created automatically when first used
 		// No API call needed for creation
 		return args.state ?? {

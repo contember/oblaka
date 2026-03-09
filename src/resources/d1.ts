@@ -44,7 +44,7 @@ export class D1Database implements BindableResource<D1DatabaseState> {
 		if (args.dryRun) {
 			return {
 				name: remoteName,
-				id: 'dry-run-id-' + Math.random().toString(36).substr(2, 9),
+				id: 'dry-run-id-' + Math.random().toString(36).substring(2, 11),
 			}
 		}
 
@@ -65,7 +65,7 @@ export class D1Database implements BindableResource<D1DatabaseState> {
 
 export const D1Destroyer: ResourceDestroyer<D1DatabaseState> = async (args): Promise<void> => {
 	await args.context.client.fetch({
-		url: `/d1/databases/${args.state.id}`,
+		url: `/d1/database/${args.state.id}`,
 		method: 'DELETE',
 	})
 }

@@ -36,9 +36,9 @@ export class DurableObject implements BindableResource<DurableObjectState> {
 				}]),
 			],
 			durable_objects: {
-				...args.config?.durable_objects ?? [],
+				...(args.config?.durable_objects ?? {}),
 				bindings: [
-					...args.config?.durable_objects?.bindings ?? [],
+					...(args.config?.durable_objects?.bindings ?? []),
 					{
 						name: args.binding,
 						class_name: this.options.className,
