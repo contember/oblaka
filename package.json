@@ -8,6 +8,9 @@
 		"type": "git",
 		"url": "https://github.com/contember/oblaka"
 	},
+	"bin": {
+		"oblaka": "./src/commands/run.ts"
+	},
 	"files": [
 		"src/",
 		"LICENSE.md"
