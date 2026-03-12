@@ -24,15 +24,15 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.6",
-		"@cloudflare/workers-types": "^4.20260307.1",
+		"@cloudflare/workers-types": "^4.20260312.1",
 		"@types/bun": "latest",
-		"dprint": "^0.52.0"
+		"dprint": "^0.52.0",
+		"wrangler": "^4.72.0"
 	},
 	"peerDependencies": {
 		"typescript": "^5"
 	},
 	"dependencies": {
-		"@cloudflare/workers-utils": "^0.12.0",
 		"jsonc-parser": "^3.3.1"
 	}
 }

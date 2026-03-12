@@ -1,4 +1,4 @@
-import type { RawEnvironment } from '@cloudflare/workers-utils'
+import type { Unstable_RawEnvironment } from 'wrangler'
 import type { CloudflareClient } from './client'
 import type { Worker } from './resources'
 
@@ -12,7 +12,7 @@ export interface Context {
 	client: CloudflareClient
 }
 
-export type Config = RawEnvironment
+export type Config = Unstable_RawEnvironment
 
 export type ResourceKind =
 	| 'worker'
