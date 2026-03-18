@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { CloudflareConfigureExecutor } from './configure'
 import { CloudflareDeployExecutor } from './deploy'
 import { input } from './input'
