@@ -67,16 +67,15 @@ export class ResourceProcessor {
 					...config,
 					migrations: [
 						...(config.migrations ?? [])
-							.map((m: { new_sqlite_classes?: string[] }) => {
-								if (!m.new_sqlite_classes) return m
+							.flatMap(m => {
+								if (!m.new_sqlite_classes) return [m]
 								const filtered = m.new_sqlite_classes.filter((c: string) => !deletedClassesSet.has(c))
 								if (filtered.length === 0) {
-									const { new_sqlite_classes, ...rest } = m
-									return Object.keys(rest).length > 1 ? rest : null
+									const { new_sqlite_classes: _, ...rest } = m
+									return Object.keys(rest).length > 1 ? [rest as typeof m] : []
 								}
-								return { ...m, new_sqlite_classes: filtered }
-							})
-							.filter(Boolean),
+								return [{ ...m, new_sqlite_classes: filtered }]
+							}),
 						{
 							tag: getNextMigrationTag(config),
 							deleted_classes: deletedClasses,

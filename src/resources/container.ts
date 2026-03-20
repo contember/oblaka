@@ -40,7 +40,9 @@ export class Container implements BindableResource<ContainerState> {
 	}
 
 	configureBinding(args: { config: Config; binding: string; state?: ContainerState; env: string }): Config {
-		const hasMigration = args.config?.migrations?.find(it => it.new_sqlite_classes?.includes(this.options.className))
+		const hasMigration = args.config?.migrations?.find((it: { new_sqlite_classes?: string[] }) =>
+			it.new_sqlite_classes?.includes(this.options.className)
+		)
 
 		return {
 			...args.config,
