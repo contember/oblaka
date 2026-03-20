@@ -19,6 +19,7 @@ export const input = (() => {
 		dryRun: !!named['dry-run'],
 		remote: !!named.remote,
 		destroy: !!named.destroy,
+		validate: !!named.validate,
 		outStatePath: named['out-state'] === true ? 'out-state.json' : named['out-state'],
 	}
 })()
