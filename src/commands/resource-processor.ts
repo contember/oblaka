@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { Worker } from '../resources'
 import type { Config, DefineFn, Resource } from '../types'
+import { getNextMigrationTag } from '../utils/migrations'
 import { tryReadFile } from './utils/fs'
 
 export class ResourceProcessor {
@@ -10,6 +11,7 @@ export class ResourceProcessor {
 
 	constructor(
 		private readonly resourceHandler: ResourceApplier,
+		private readonly configWriter: ConfigWriter = defaultConfigWriter,
 	) {
 	}
 
@@ -54,9 +56,44 @@ export class ResourceProcessor {
 			config = binding.configureBinding({ config, binding: bindingName, state, env })
 		}
 
-		await fs.writeFile(configPath, `/**\n * File is auto generated DO NOT EDIT\n */\n${JSON.stringify(config, null, '\t')}\n`)
+		if (worker.options.deleteDurableObjectsOnRemoval !== false) {
+			const oldClasses = new Set((existingConfig.durable_objects?.bindings ?? []).map((b: { class_name: string }) => b.class_name))
+			const newClasses = new Set((config.durable_objects?.bindings ?? []).map((b: { class_name: string }) => b.class_name))
+			const deletedClasses = [...oldClasses].filter(c => !newClasses.has(c))
+
+			if (deletedClasses.length > 0) {
+				const deletedClassesSet = new Set(deletedClasses)
+				config = {
+					...config,
+					migrations: [
+						...(config.migrations ?? [])
+							.map((m: { new_sqlite_classes?: string[] }) => {
+								if (!m.new_sqlite_classes) return m
+								const filtered = m.new_sqlite_classes.filter((c: string) => !deletedClassesSet.has(c))
+								if (filtered.length === 0) {
+									const { new_sqlite_classes, ...rest } = m
+									return Object.keys(rest).length > 1 ? rest : null
+								}
+								return { ...m, new_sqlite_classes: filtered }
+							})
+							.filter(Boolean),
+						{
+							tag: getNextMigrationTag(config),
+							deleted_classes: deletedClasses,
+						},
+					],
+				}
+			}
+		}
+
+		const content = `/**\n * File is auto generated DO NOT EDIT\n */\n${JSON.stringify(config, null, '\t')}\n`
+		await this.configWriter(configPath, content)
 	}
 }
+
+export type ConfigWriter = (path: string, content: string) => Promise<void>
+
+const defaultConfigWriter: ConfigWriter = (path, content) => fs.writeFile(path, content)
 
 export interface ResourceApplier {
 	applyResource<T>(resource: Resource<T>): Promise<T | undefined>

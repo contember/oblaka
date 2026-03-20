@@ -12,6 +12,7 @@ export class Worker implements BindableResource<WorkerState> {
 				name: string
 				compatibility_flags: CompatibilityFlags[]
 				bindings: Record<string, AnyBindable>
+				deleteDurableObjectsOnRemoval?: boolean
 			}
 			& Partial<
 				Pick<
