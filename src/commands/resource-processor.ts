@@ -38,7 +38,7 @@ export class ResourceProcessor {
 		}
 		const configPath = path.join(worker.options.dir, 'wrangler.jsonc')
 		const existingConfig = jsoncParser.parse((await tryReadFile(configPath)) || '{}') as Config
-		const { bindings, dir, deleteDurableObjectsOnRemoval, ...workerConfig } = worker?.options ?? {}
+		const { bindings, dir, deleteDurableObjectsOnRemoval, ...workerConfig } = worker.options
 
 		let config: Config = {
 			...workerConfig,
