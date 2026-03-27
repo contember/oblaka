@@ -1,25 +1,39 @@
-import { parseArgs } from './utils/args'
-
-const requireString = (value: string | boolean | undefined, name: string): string => {
-	if (typeof value === 'string') {
-		return value
-	}
-	throw new Error(`Missing required string argument: ${name}`)
-}
+import { parseArgs } from 'node:util'
 
 export const input = (() => {
-	const { named, positional } = parseArgs(process.argv.slice(2))
+	const { values, positionals } = parseArgs({
+		args: process.argv.slice(2),
+		allowPositionals: true,
+		options: {
+			env: { type: 'string' },
+			'state-namespace': { type: 'string' },
+			'account-id': { type: 'string' },
+			'api-token': { type: 'string' },
+			'dry-run': { type: 'boolean' },
+			remote: { type: 'boolean' },
+			destroy: { type: 'boolean' },
+			validate: { type: 'boolean' },
+			'out-state': { type: 'string' },
+		},
+	})
+
+	const main = positionals[0]
+	if (!main) {
+		console.error('Missing config entrypoint argument')
+		process.exit(1)
+	}
+
 	return {
-		main: requireString(positional[0], 'config entrypoint'),
-		env: requireString(named.env || process.env.CLOUDFLARE_ENV || 'local', 'environment'),
-		stateNamespace: requireString(named['state-namespace'] || 'cf-state', 'state namespace'),
-		accountId: (named['account-id'] || process.env.CLOUDFLARE_ACCOUNT_ID || '') as string,
-		apiToken: (named['api-token'] || process.env.CLOUDFLARE_API_TOKEN || '') as string,
-		dryRun: !!named['dry-run'],
-		remote: !!named.remote,
-		destroy: !!named.destroy,
-		validate: !!named.validate,
-		outStatePath: named['out-state'] === true ? 'out-state.json' : named['out-state'],
+		main,
+		env: values.env || process.env.CLOUDFLARE_ENV || 'local',
+		stateNamespace: values['state-namespace'] || 'cf-state',
+		accountId: values['account-id'] || process.env.CLOUDFLARE_ACCOUNT_ID || '',
+		apiToken: values['api-token'] || process.env.CLOUDFLARE_API_TOKEN || '',
+		dryRun: values['dry-run'] ?? false,
+		remote: values.remote ?? false,
+		destroy: values.destroy ?? false,
+		validate: values.validate ?? false,
+		outStatePath: values['out-state'],
 	}
 })()
 
