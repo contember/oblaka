@@ -38,7 +38,7 @@ export class ResourceProcessor {
 		}
 		const configPath = path.join(worker.options.dir, 'wrangler.jsonc')
 		const existingConfig = jsoncParser.parse((await tryReadFile(configPath)) || '{}') as Config
-		const { bindings, dir, ...workerConfig } = worker?.options ?? {}
+		const { bindings, dir, deleteDurableObjectsOnRemoval, ...workerConfig } = worker?.options ?? {}
 
 		let config: Config = {
 			...workerConfig,
@@ -56,7 +56,7 @@ export class ResourceProcessor {
 			config = binding.configureBinding({ config, binding: bindingName, state, env })
 		}
 
-		if (worker.options.deleteDurableObjectsOnRemoval !== false) {
+		if (deleteDurableObjectsOnRemoval !== false) {
 			const oldClasses = new Set((existingConfig.durable_objects?.bindings ?? []).map((b: { class_name: string }) => b.class_name))
 			const newClasses = new Set((config.durable_objects?.bindings ?? []).map((b: { class_name: string }) => b.class_name))
 			const deletedClasses = [...oldClasses].filter(c => !newClasses.has(c))
