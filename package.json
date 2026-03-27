@@ -20,7 +20,8 @@
 		"format:check": "dprint check",
 		"lint": "biome check ./src",
 		"lint:fix": "biome check --write ./src",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.6",
