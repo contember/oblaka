@@ -20,7 +20,7 @@ export class CloudflareDeployExecutor implements ResourceApplier {
 			apiToken: input.apiToken,
 		})
 
-		const stateStore = new KVStateStorage(cfClient, input.stateNamespace)
+		const stateStore = new KVStateStorage(cfClient, input.stateNamespace, input.stateNamespaceId)
 		const stateKey = { env: input.env }
 		const state = await stateStore.get(stateKey)
 

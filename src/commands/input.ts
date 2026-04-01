@@ -7,6 +7,7 @@ export const input = (() => {
 		options: {
 			env: { type: 'string' },
 			'state-namespace': { type: 'string' },
+			'state-namespace-id': { type: 'string' },
 			'account-id': { type: 'string' },
 			'api-token': { type: 'string' },
 			'dry-run': { type: 'boolean' },
@@ -27,6 +28,7 @@ export const input = (() => {
 		main,
 		env: values.env || process.env.CLOUDFLARE_ENV || 'local',
 		stateNamespace: values['state-namespace'] || 'cf-state',
+		stateNamespaceId: values['state-namespace-id'],
 		accountId: values['account-id'] || process.env.CLOUDFLARE_ACCOUNT_ID || '',
 		apiToken: values['api-token'] || process.env.CLOUDFLARE_API_TOKEN || '',
 		dryRun: values['dry-run'] ?? false,

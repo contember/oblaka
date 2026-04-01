@@ -20,18 +20,20 @@ export class KVStateStorage implements StateStorage {
 	constructor(
 		private readonly cfClient: CloudflareClient,
 		private readonly namespace: string,
+		namespaceId?: string,
 	) {
+		this.id = namespaceId
 	}
 
 	private async resolveKvId(): Promise<string> {
 		if (this.id) {
 			return this.id
 		}
-		const id = await this.cfClient.fetch<{ title: string; id: string }[]>({
-			url: `/storage/kv/namespaces`,
+		const namespaces = await this.cfClient.fetch<{ title: string; id: string }[]>({
+			url: `/storage/kv/namespaces?per_page=1000`,
 			method: 'GET',
 		})
-		const existing = id.find(i => i.title === this.namespace)
+		const existing = namespaces.find(i => i.title === this.namespace)
 		if (existing) {
 			this.id = existing.id
 			return existing.id
