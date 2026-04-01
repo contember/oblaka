@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
-import { ResourceProcessor, type ConfigWriter, type ResourceApplier } from '../../src/commands/resource-processor'
+import * as path from 'node:path'
+import { type ConfigWriter, type ResourceApplier, ResourceProcessor } from '../../src/commands/resource-processor'
 
 const noopApplier: ResourceApplier = {
 	async applyResource() {

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import type { Config } from '../../src/types'
 import { Browser } from '../../src/resources/browser'
 import { Images } from '../../src/resources/images'
-import { VersionMetadata } from '../../src/resources/version-metadata'
 import { ServiceReference } from '../../src/resources/service-reference'
+import { VersionMetadata } from '../../src/resources/version-metadata'
+import type { Config } from '../../src/types'
 
 const emptyConfig = {} as Config
 
