@@ -5,6 +5,7 @@ import { DurableObjectDestroyer } from './do'
 import { KVNamespaceDestroyer } from './kv'
 import { QueueDestroyer } from './queues'
 import { R2BucketDestroyer } from './r2'
+import { VectorizeIndexDestroyer } from './vectorize'
 import { WorkerDestroyer } from './worker'
 import { WorkflowDestroyer } from './workflow'
 
@@ -18,6 +19,7 @@ export * from './kv'
 export * from './queues'
 export * from './r2'
 export * from './service-reference'
+export * from './vectorize'
 export * from './version-metadata'
 export * from './worker'
 export * from './workflow'
@@ -31,5 +33,6 @@ export const destroyers: Destroyers = {
 	queue: QueueDestroyer,
 	r2_bucket: R2BucketDestroyer,
 	workflow: WorkflowDestroyer,
+	vectorize_index: VectorizeIndexDestroyer,
 	worker: WorkerDestroyer,
 } satisfies Record<ResourceKind, ResourceDestroyer<any>>

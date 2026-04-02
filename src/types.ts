@@ -24,6 +24,7 @@ export type ResourceKind =
 	| 'container'
 	| 'workflow'
 	| 'analytics_engine'
+	| 'vectorize_index'
 
 export interface Resource<TState> {
 	getId(): { resource: ResourceKind; id: string }
