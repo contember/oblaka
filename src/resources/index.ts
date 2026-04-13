@@ -9,6 +9,7 @@ import { VectorizeIndexDestroyer } from './vectorize'
 import { WorkerDestroyer } from './worker'
 import { WorkflowDestroyer } from './workflow'
 
+export * from './ai-gateway'
 export * from './analytics-engine'
 export * from './browser'
 export * from './container'

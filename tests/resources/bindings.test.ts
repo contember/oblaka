@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { AiGateway } from '../../src/resources/ai-gateway'
 import { Browser } from '../../src/resources/browser'
 import { Images } from '../../src/resources/images'
 import { ServiceReference } from '../../src/resources/service-reference'
@@ -6,6 +7,14 @@ import { VersionMetadata } from '../../src/resources/version-metadata'
 import type { Config } from '../../src/types'
 
 const emptyConfig = {} as Config
+
+describe('AiGateway', () => {
+	test('configures ai binding', () => {
+		const ai = new AiGateway()
+		const config = ai.configureBinding({ config: emptyConfig, binding: 'AI', env: 'local' })
+		expect(config.ai).toEqual({ binding: 'AI' })
+	})
+})
 
 describe('Browser', () => {
 	test('configures browser binding', () => {
