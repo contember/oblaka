@@ -13,7 +13,7 @@ interface QueueProducerBindingOptions {
 }
 
 interface QueueConsumerBindingOptions {
-	type?: string
+	type?: 'worker'
 	maxBatchSize?: number
 	maxBatchTimeout?: number
 	maxRetries?: number
