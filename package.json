@@ -1,6 +1,6 @@
 {
 	"name": "oblaka-iac",
-	"version": "0.0.13",
+	"version": "0.0.14",
 	"main": "./src/index.ts",
 	"type": "module",
 	"license": "MIT",
