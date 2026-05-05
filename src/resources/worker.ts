@@ -23,6 +23,7 @@ export class Worker implements BindableResource<WorkerState> {
 					| 'find_additional_modules'
 					| 'base_dir'
 					| 'preview_urls'
+					| 'workers_dev'
 					| 'routes'
 					| 'route'
 					| 'observability'
