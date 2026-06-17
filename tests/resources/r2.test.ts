@@ -1,10 +1,42 @@
 import { describe, expect, test } from 'bun:test'
 import { R2Bucket } from '../../src/resources/r2'
 import type { Config } from '../../src/types'
+import { mockContext } from '../helpers/mock-client'
 
 const emptyConfig = {} as Config
 
 describe('R2Bucket', () => {
+	describe('apply', () => {
+		test('returns existing state without any remote call', async () => {
+			const r2 = new R2Bucket({ name: 'my-bucket' })
+			const { context, calls } = mockContext({})
+			const result = await r2.apply({ state: { name: 'production-my-bucket' }, context, dryRun: false })
+			expect(result).toEqual({ name: 'production-my-bucket' })
+			expect(calls).toHaveLength(0)
+		})
+
+		test('adopts an existing remote bucket by name instead of failing on create', async () => {
+			const r2 = new R2Bucket({ name: 'my-bucket' })
+			const { context, calls } = mockContext({
+				'GET /r2/buckets': { buckets: [{ name: 'production-my-bucket' }] },
+			})
+			const result = await r2.apply({ context, dryRun: false })
+			expect(result).toEqual({ name: 'production-my-bucket' })
+			expect(calls.some(c => c.method === 'POST')).toBe(false)
+		})
+
+		test('creates when no remote bucket matches', async () => {
+			const r2 = new R2Bucket({ name: 'my-bucket' })
+			const { context, calls } = mockContext({
+				'GET /r2/buckets': { buckets: [] },
+				'POST /r2/buckets': {},
+			})
+			const result = await r2.apply({ context, dryRun: false })
+			expect(result).toEqual({ name: 'production-my-bucket' })
+			expect(calls.some(c => c.method === 'POST' && c.url === '/r2/buckets')).toBe(true)
+		})
+	})
+
 	describe('getId', () => {
 		test('returns r2_bucket resource kind', () => {
 			const r2 = new R2Bucket({ name: 'my-bucket' })
