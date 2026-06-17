@@ -53,6 +53,18 @@ export class Queue implements BindableResource<QueueState> {
 			}
 		}
 
+		// Adopt an existing queue instead of failing on create. On lost state a
+		// blind create conflicts with the already-existing queue; look it up by
+		// name and adopt it.
+		const existingQueues = await args.context.client.fetch<{ queue_id: string; queue_name: string }[]>({
+			url: `/queues`,
+			method: 'GET',
+		})
+		const existingQueue = existingQueues.find(q => q.queue_name === remoteName)
+		if (existingQueue) {
+			return { id: existingQueue.queue_id, name: remoteName }
+		}
+
 		const result = await args.context.client.fetch<{ queue_id: string }>({
 			url: `/queues`,
 			method: 'POST',

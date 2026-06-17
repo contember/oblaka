@@ -84,6 +84,19 @@ export class Worker implements BindableResource<WorkerState> {
 			}
 		}
 
+		// Adopt an existing worker instead of failing on create. State can be
+		// lost (e.g. the shared cf-state KV namespace gets clobbered by another
+		// project deploying the same env), in which case a blind create returns
+		// 10040 "already exists". Look it up by name and adopt it.
+		const existingWorkers = await args.context.client.fetch<{ id: string; name: string }[]>({
+			method: 'GET',
+			url: `/workers/workers`,
+		})
+		const existingWorker = existingWorkers.find(w => w.name === remoteName)
+		if (existingWorker) {
+			return { id: existingWorker.id, name: remoteName }
+		}
+
 		const result = await args.context.client.fetch<{ id: string }>({
 			method: 'POST',
 			url: `/workers/workers`,
