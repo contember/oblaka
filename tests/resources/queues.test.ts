@@ -1,10 +1,42 @@
 import { describe, expect, test } from 'bun:test'
 import { Queue } from '../../src/resources/queues'
 import type { Config } from '../../src/types'
+import { mockContext } from '../helpers/mock-client'
 
 const emptyConfig = {} as Config
 
 describe('Queue', () => {
+	describe('apply', () => {
+		test('returns existing state without any remote call', async () => {
+			const queue = new Queue({ name: 'my-queue' })
+			const { context, calls } = mockContext({})
+			const result = await queue.apply({ state: { id: 'q-1', name: 'production-my-queue' }, context, dryRun: false })
+			expect(result).toEqual({ id: 'q-1', name: 'production-my-queue' })
+			expect(calls).toHaveLength(0)
+		})
+
+		test('adopts an existing remote queue by name instead of failing on create', async () => {
+			const queue = new Queue({ name: 'my-queue' })
+			const { context, calls } = mockContext({
+				'GET /queues': [{ queue_id: 'q-existing', queue_name: 'production-my-queue' }],
+			})
+			const result = await queue.apply({ context, dryRun: false })
+			expect(result).toEqual({ id: 'q-existing', name: 'production-my-queue' })
+			expect(calls.some(c => c.method === 'POST')).toBe(false)
+		})
+
+		test('creates when no remote queue matches', async () => {
+			const queue = new Queue({ name: 'my-queue' })
+			const { context, calls } = mockContext({
+				'GET /queues': [],
+				'POST /queues': { queue_id: 'q-new' },
+			})
+			const result = await queue.apply({ context, dryRun: false })
+			expect(result).toEqual({ id: 'q-new', name: 'production-my-queue' })
+			expect(calls.some(c => c.method === 'POST' && c.url === '/queues')).toBe(true)
+		})
+	})
+
 	describe('getId', () => {
 		test('returns queue resource kind', () => {
 			const queue = new Queue({ name: 'my-queue' })

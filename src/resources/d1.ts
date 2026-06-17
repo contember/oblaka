@@ -48,6 +48,19 @@ export class D1Database implements BindableResource<D1DatabaseState> {
 			}
 		}
 
+		// Adopt an existing database instead of creating a duplicate. D1 allows
+		// multiple databases with the same name, so on lost state a blind create
+		// would silently spawn a second, empty DB and the binding would point at
+		// it — data loss. Look it up by name first and adopt it.
+		const existingDatabases = await args.context.client.fetch<{ uuid: string; name: string }[]>({
+			url: `/d1/database?name=${encodeURIComponent(remoteName)}`,
+			method: 'GET',
+		})
+		const existingDatabase = existingDatabases.find(d => d.name === remoteName)
+		if (existingDatabase) {
+			return { name: remoteName, id: existingDatabase.uuid }
+		}
+
 		const result = await args.context.client.fetch<{ uuid: string }>({
 			url: `/d1/database`,
 			method: 'POST',

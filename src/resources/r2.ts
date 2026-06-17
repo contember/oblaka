@@ -44,6 +44,19 @@ export class R2Bucket implements BindableResource<R2BucketState> {
 			}
 		}
 
+		// Adopt an existing bucket instead of failing on create. On lost state a
+		// blind create returns a conflict for the already-existing bucket; look
+		// it up by name and adopt it (bucket contents are untouched either way).
+		const existingBuckets = await args.context.client.fetch<{ buckets: { name: string }[] }>({
+			url: `/r2/buckets?per_page=1000`,
+			method: 'GET',
+		})
+		if (existingBuckets.buckets?.some(b => b.name === remoteName)) {
+			return {
+				name: remoteName,
+			}
+		}
+
 		await args.context.client.fetch({
 			url: `/r2/buckets`,
 			method: 'POST',

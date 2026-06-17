@@ -15,33 +15,31 @@ export class Worker implements BindableResource<WorkerState> {
 				deleteDurableObjectsOnRemoval?: boolean
 			}
 			& Partial<
-				Pick<
+				Omit<
 					Config,
-					| 'main'
-					| 'compatibility_date'
-					| 'vars'
-					| 'find_additional_modules'
-					| 'base_dir'
-					| 'preview_urls'
-					| 'workers_dev'
-					| 'routes'
-					| 'route'
-					| 'observability'
-					| 'logpush'
-					| 'rules'
-					| 'limits'
-					| 'no_bundle'
-					| 'keep_names'
-					| 'first_party_worker'
-					| 'minify'
-					| 'assets'
-					| 'compliance_region'
-					| 'build'
-					| 'define'
-					| 'jsx_factory'
-					| 'jsx_fragment'
-					| 'triggers'
-					| 'upload_source_maps'
+					| 'name'
+					| 'compatibility_flags'
+					| 'account_id'
+					| 'kv_namespaces'
+					| 'r2_buckets'
+					| 'd1_databases'
+					| 'queues'
+					| 'durable_objects'
+					| 'migrations'
+					| 'workflows'
+					| 'containers'
+					| 'send_email'
+					| 'services'
+					| 'vectorize'
+					| 'analytics_engine_datasets'
+					| 'browser'
+					| 'images'
+					| 'version_metadata'
+					| 'worker_loaders'
+					| 'vpc_networks'
+					| 'ai_search_namespaces'
+					| 'flagship'
+					| 'cache'
 				>
 			>,
 	) {}
@@ -84,6 +82,19 @@ export class Worker implements BindableResource<WorkerState> {
 				id: 'dry-run-id-' + Math.random().toString(36).substring(2, 9),
 				name: remoteName,
 			}
+		}
+
+		// Adopt an existing worker instead of failing on create. State can be
+		// lost (e.g. the shared cf-state KV namespace gets clobbered by another
+		// project deploying the same env), in which case a blind create returns
+		// 10040 "already exists". Look it up by name and adopt it.
+		const existingWorkers = await args.context.client.fetch<{ id: string; name: string }[]>({
+			method: 'GET',
+			url: `/workers/workers?per_page=1000`,
+		})
+		const existingWorker = existingWorkers.find(w => w.name === remoteName)
+		if (existingWorker) {
+			return { id: existingWorker.id, name: remoteName }
 		}
 
 		const result = await args.context.client.fetch<{ id: string }>({
