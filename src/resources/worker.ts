@@ -90,7 +90,7 @@ export class Worker implements BindableResource<WorkerState> {
 		// 10040 "already exists". Look it up by name and adopt it.
 		const existingWorkers = await args.context.client.fetch<{ id: string; name: string }[]>({
 			method: 'GET',
-			url: `/workers/workers`,
+			url: `/workers/workers?per_page=1000`,
 		})
 		const existingWorker = existingWorkers.find(w => w.name === remoteName)
 		if (existingWorker) {

@@ -48,7 +48,7 @@ export class R2Bucket implements BindableResource<R2BucketState> {
 		// blind create returns a conflict for the already-existing bucket; look
 		// it up by name and adopt it (bucket contents are untouched either way).
 		const existingBuckets = await args.context.client.fetch<{ buckets: { name: string }[] }>({
-			url: `/r2/buckets`,
+			url: `/r2/buckets?per_page=1000`,
 			method: 'GET',
 		})
 		if (existingBuckets.buckets?.some(b => b.name === remoteName)) {

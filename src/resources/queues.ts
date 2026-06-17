@@ -57,7 +57,7 @@ export class Queue implements BindableResource<QueueState> {
 		// blind create conflicts with the already-existing queue; look it up by
 		// name and adopt it.
 		const existingQueues = await args.context.client.fetch<{ queue_id: string; queue_name: string }[]>({
-			url: `/queues`,
+			url: `/queues?per_page=1000`,
 			method: 'GET',
 		})
 		const existingQueue = existingQueues.find(q => q.queue_name === remoteName)
