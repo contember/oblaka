@@ -4,7 +4,7 @@ export class CloudflareClient {
 	constructor(
 		private readonly config: {
 			accountId: string
-			apiToken: string
+			getToken: () => Promise<string>
 		},
 	) {
 		this.baseUrl = `https://api.cloudflare.com/client/v4/accounts/${config.accountId}`
@@ -16,13 +16,11 @@ export class CloudflareClient {
 		body?: any
 		headers?: Record<string, string>
 	}): Promise<T> {
-		if (!this.config.apiToken) {
-			throw new Error('API token is not set')
-		}
+		const token = await this.config.getToken()
 		const response = await fetch(`${this.baseUrl}${url}`, {
 			method,
 			headers: {
-				Authorization: `Bearer ${this.config.apiToken}`,
+				Authorization: `Bearer ${token}`,
 				...(body ? { 'Content-Type': 'application/json' } : {}),
 				...headers,
 			},
