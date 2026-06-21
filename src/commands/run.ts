@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { hasWranglerCredentials } from '../auth'
 import { CloudflareConfigureExecutor } from './configure'
 import { CloudflareDeployExecutor } from './deploy'
 import { input } from './input'
@@ -14,8 +15,8 @@ if (input.validate) {
 		console.error('Missing --account-id or CLOUDFLARE_ACCOUNT_ID environment variable')
 		process.exit(1)
 	}
-	if (!input.apiToken) {
-		console.error('Missing --api-token or CLOUDFLARE_API_TOKEN environment variable')
+	if (!input.apiToken && !hasWranglerCredentials()) {
+		console.error('Missing credentials: set --api-token / CLOUDFLARE_API_TOKEN, or run `wrangler login` for OAuth')
 		process.exit(1)
 	}
 	await CloudflareDeployExecutor.execute({ input })

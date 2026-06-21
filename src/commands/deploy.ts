@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises'
+import { createWranglerTokenProvider } from '../auth'
 import { CloudflareClient } from '../client'
 import { destroyers } from '../resources'
 import { KVStateStorage, type State } from '../state'
@@ -15,9 +16,14 @@ export class CloudflareDeployExecutor implements ResourceApplier {
 	public static async execute({ input }: {
 		input: Input
 	}) {
+		// An explicit API token wins; otherwise fall back to wrangler's stored
+		// OAuth credentials (`wrangler login`).
+		const getToken = input.apiToken
+			? async () => input.apiToken
+			: createWranglerTokenProvider()
 		const cfClient = new CloudflareClient({
 			accountId: input.accountId,
-			apiToken: input.apiToken,
+			getToken,
 		})
 
 		const stateStore = new KVStateStorage(cfClient, input.stateNamespace, input.stateNamespaceId)
