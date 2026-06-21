@@ -20,7 +20,7 @@ export class CloudflareDeployExecutor implements ResourceApplier {
 		// OAuth credentials (`wrangler login`).
 		const getToken = input.apiToken
 			? async () => input.apiToken
-			: createWranglerTokenProvider()
+			: createWranglerTokenProvider({ persist: input.persistToken })
 		const cfClient = new CloudflareClient({
 			accountId: input.accountId,
 			getToken,

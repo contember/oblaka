@@ -16,9 +16,10 @@ export interface WranglerCredentials {
 	refreshToken: string
 	/** ISO timestamp of when `oauthToken` expires. */
 	expirationTime: string
-	/** Raw `scopes = [...]` line, preserved verbatim so write-back stays faithful. */
-	scopesLine?: string
 }
+
+/** The subset of fields a token refresh produces and writes back. */
+type RefreshedCredentials = Pick<WranglerCredentials, 'oauthToken' | 'refreshToken' | 'expirationTime'>
 
 /**
  * Mirrors wrangler's `getGlobalWranglerConfigPath()`: prefer the legacy
@@ -59,8 +60,7 @@ export function parseWranglerCredentials(toml: string): WranglerCredentials | nu
 	if (!oauthToken || !refreshToken || !expirationTime) {
 		return null
 	}
-	const scopesLine = toml.match(/^\s*scopes\s*=.*$/m)?.[0]
-	return { oauthToken, refreshToken, expirationTime, scopesLine }
+	return { oauthToken, refreshToken, expirationTime }
 }
 
 export function readWranglerCredentials(configPath = getWranglerConfigPath()): WranglerCredentials | null {
@@ -77,23 +77,33 @@ export function hasWranglerCredentials(configPath?: string): boolean {
 	return readWranglerCredentials(configPath) !== null
 }
 
-function serializeWranglerCredentials(creds: WranglerCredentials): string {
-	const lines = [
-		`oauth_token = "${creds.oauthToken}"`,
-		`expiration_time = "${creds.expirationTime}"`,
-		`refresh_token = "${creds.refreshToken}"`,
-	]
-	if (creds.scopesLine) {
-		lines.push(creds.scopesLine)
+/** Replaces a `key = "value"` line in place, or appends it if absent, leaving
+ *  every other line (scopes, comments, future wrangler fields) untouched. */
+function upsertTomlString(contents: string, key: string, value: string): string {
+	const line = `${key} = "${value}"`
+	const re = new RegExp(`^(\\s*)${key}\\s*=.*$`, 'm')
+	if (re.test(contents)) {
+		return contents.replace(re, `$1${line}`)
 	}
-	return `${lines.join('\n')}\n`
+	const prefix = contents.length === 0 || contents.endsWith('\n') ? contents : `${contents}\n`
+	return `${prefix}${line}\n`
 }
 
-function writeWranglerCredentials(configPath: string, creds: WranglerCredentials): void {
+function writeWranglerCredentials(configPath: string, creds: RefreshedCredentials): void {
+	// Update the three fields in place so any other keys wrangler stores
+	// (scopes, comments, fields added in future versions) are preserved.
+	let contents = ''
+	try {
+		contents = fs.readFileSync(configPath, 'utf8')
+	} catch {}
+	contents = upsertTomlString(contents, 'oauth_token', creds.oauthToken)
+	contents = upsertTomlString(contents, 'expiration_time', creds.expirationTime)
+	contents = upsertTomlString(contents, 'refresh_token', creds.refreshToken)
+
 	// Write to a sibling temp file then rename so a crash can't leave wrangler's
 	// credentials file half-written.
 	const tmp = `${configPath}.${process.pid}.tmp`
-	fs.writeFileSync(tmp, serializeWranglerCredentials(creds), { mode: 0o600 })
+	fs.writeFileSync(tmp, contents, { mode: 0o600 })
 	fs.renameSync(tmp, configPath)
 }
 
@@ -113,7 +123,7 @@ interface RefreshDeps {
 export async function refreshAccessToken(
 	refreshToken: string,
 	deps: RefreshDeps = {},
-): Promise<Pick<WranglerCredentials, 'oauthToken' | 'refreshToken' | 'expirationTime'>> {
+): Promise<RefreshedCredentials> {
 	const doFetch = deps.fetch ?? fetch
 	const tokenUrl = deps.tokenUrl ?? tokenUrlFromEnv()
 	const clientId = deps.clientId ?? (process.env.WRANGLER_CLIENT_ID || DEFAULT_CLIENT_ID)
@@ -134,6 +144,9 @@ export async function refreshAccessToken(
 		)
 	}
 	const data = (await response.json()) as TokenEndpointResponse
+	if (!data.access_token || typeof data.expires_in !== 'number') {
+		throw new Error('Cloudflare OAuth token endpoint returned an unexpected response. Run `wrangler login` to re-authenticate.')
+	}
 	return {
 		oauthToken: data.access_token,
 		// Cloudflare may rotate the refresh token; fall back to the existing one.
@@ -188,7 +201,7 @@ export function createWranglerTokenProvider(options: WranglerTokenProviderOption
 		const refreshed = await refreshAccessToken(creds.refreshToken, { fetch: options.fetch, now })
 		if (persist) {
 			try {
-				writeWranglerCredentials(configPath, { ...creds, ...refreshed })
+				writeWranglerCredentials(configPath, refreshed)
 			} catch (error) {
 				console.warn(`Warning: refreshed Cloudflare OAuth token but could not persist it to ${configPath}: ${error}`)
 			}

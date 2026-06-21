@@ -15,6 +15,7 @@ export const input = (() => {
 			destroy: { type: 'boolean' },
 			validate: { type: 'boolean' },
 			'out-state': { type: 'string' },
+			'no-persist-token': { type: 'boolean' },
 		},
 	})
 
@@ -36,6 +37,9 @@ export const input = (() => {
 		destroy: values.destroy ?? false,
 		validate: values.validate ?? false,
 		outStatePath: values['out-state'],
+		// When using OAuth, persist the refreshed token back to wrangler's config
+		// unless the user opts out (e.g. read-only credentials dir).
+		persistToken: !(values['no-persist-token'] ?? false),
 	}
 })()
 
