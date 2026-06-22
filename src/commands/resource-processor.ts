@@ -18,23 +18,36 @@ export class ResourceProcessor {
 	public async run({ main, env }: {
 		main: string
 		env: string
-	}) {
+	}): Promise<GeneratedConfig[]> {
 		const defineFn = (await import(path.resolve(main))).default as DefineFn
 		const definition = defineFn({ env })
+		return this.process({ definition, env })
+	}
+
+	public async process({ definition, env }: {
+		definition: Worker | undefined
+		env: string
+	}): Promise<GeneratedConfig[]> {
+		const generated: GeneratedConfig[] = []
 
 		if (definition) {
 			this.workers.push(definition)
 		}
 
 		while (this.workers.length) {
-			await this.processWorker(env)
+			const result = await this.processWorker(env)
+			if (result) {
+				generated.push(result)
+			}
 		}
+
+		return generated
 	}
 
-	private async processWorker(env: string): Promise<void> {
+	private async processWorker(env: string): Promise<GeneratedConfig | undefined> {
 		const worker = this.workers.shift()
 		if (!worker) {
-			return
+			return undefined
 		}
 		const configPath = path.join(worker.options.dir, 'wrangler.jsonc')
 		const existingConfig = jsoncParser.parse((await tryReadFile(configPath)) || '{}') as Config
@@ -87,7 +100,15 @@ export class ResourceProcessor {
 
 		const content = `/**\n * File is auto generated DO NOT EDIT\n */\n${JSON.stringify(config, null, '\t')}\n`
 		await this.configWriter(configPath, content)
+
+		return { path: configPath, config, content }
 	}
+}
+
+export interface GeneratedConfig {
+	path: string
+	config: Config
+	content: string
 }
 
 export type ConfigWriter = (path: string, content: string) => Promise<void>

@@ -1,11 +1,11 @@
 import * as fs from 'node:fs/promises'
 import { createWranglerTokenProvider } from '../auth'
 import { CloudflareClient } from '../client'
-import { destroyers } from '../resources'
+import { destroyers, type Worker } from '../resources'
 import { KVStateStorage, type State } from '../state'
 import type { Resource } from '../types'
 import type { Input } from './input'
-import type { ResourceApplier } from './resource-processor'
+import type { ConfigWriter, GeneratedConfig, ResourceApplier } from './resource-processor'
 import { ResourceProcessor } from './resource-processor'
 import { atomic, registerShutdownHandler } from './utils/pm'
 
@@ -13,9 +13,11 @@ export class CloudflareDeployExecutor implements ResourceApplier {
 	private remaining: Set<string>
 	private totalChanged = 0
 
-	public static async execute({ input }: {
+	public static async execute({ input, definition, configWriter }: {
 		input: Input
-	}) {
+		definition: Worker | undefined
+		configWriter?: ConfigWriter
+	}): Promise<GeneratedConfig[]> {
 		// An explicit API token wins; otherwise fall back to wrangler's stored
 		// OAuth credentials (`wrangler login`).
 		const getToken = input.apiToken
@@ -30,7 +32,7 @@ export class CloudflareDeployExecutor implements ResourceApplier {
 		const stateKey = { env: input.env }
 		const state = await stateStore.get(stateKey)
 
-		const executor = new CloudflareDeployExecutor(input, state, cfClient)
+		const executor = new CloudflareDeployExecutor(input, state, cfClient, configWriter)
 
 		const unregisterShutdown = registerShutdownHandler(async () => {
 			if (input.dryRun) {
@@ -39,8 +41,9 @@ export class CloudflareDeployExecutor implements ResourceApplier {
 			await stateStore.set(stateKey, state)
 		})
 
+		let generated: GeneratedConfig[]
 		try {
-			await executor.run()
+			generated = await executor.run(definition)
 		} finally {
 			unregisterShutdown()
 			await atomic(async () => {
@@ -54,19 +57,22 @@ export class CloudflareDeployExecutor implements ResourceApplier {
 		if (input.outStatePath) {
 			await fs.writeFile(input.outStatePath, JSON.stringify(state, null, '\t'))
 		}
+
+		return generated
 	}
 
 	private constructor(
 		private readonly input: Input,
 		private readonly state: State,
 		private readonly client: CloudflareClient,
+		private readonly configWriter?: ConfigWriter,
 	) {
 		this.remaining = new Set(Object.keys(state.resources || {}))
 	}
 
-	private async run() {
-		const resourceProcessor = new ResourceProcessor(this)
-		await resourceProcessor.run({ main: this.input.main, env: this.input.env })
+	private async run(definition: Worker | undefined): Promise<GeneratedConfig[]> {
+		const resourceProcessor = new ResourceProcessor(this, this.configWriter)
+		const generated = await resourceProcessor.process({ definition, env: this.input.env })
 
 		this.log(`Changed ${this.totalChanged} resources`)
 
@@ -95,6 +101,8 @@ export class CloudflareDeployExecutor implements ResourceApplier {
 				this.log(`Destroyed ${resource}:${id}`)
 			}
 		}
+
+		return generated
 	}
 
 	private log(message: string) {
