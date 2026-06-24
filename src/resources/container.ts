@@ -11,6 +11,13 @@ export class Container implements BindableResource<ContainerState> {
 			name: string
 			className: string
 			image: string
+			/**
+			 * Docker build context for the image, RELATIVE to the wrangler config directory (emitted as
+			 * `image_build_context`). When unset, wrangler defaults the context to the Dockerfile's own
+			 * directory. Set it (e.g. `'../..'`) when the Dockerfile must COPY files from OUTSIDE its
+			 * directory — e.g. a Dockerfile in `packages/runner` that copies sibling packages from a monorepo root.
+			 */
+			imageBuildContext?: string
 			maxInstances: number
 			instanceType: 'dev' | 'basic' | 'standard'
 			/**
@@ -63,6 +70,7 @@ export class Container implements BindableResource<ContainerState> {
 					class_name: this.options.className,
 					name: args.state?.name ?? this.options.name,
 					image: this.options.image,
+					image_build_context: this.options.imageBuildContext,
 					instance_type: this.options.instanceType,
 					max_instances: this.options.maxInstances,
 					rollout_active_grace_period: this.options.rolloutActiveGracePeriod,
