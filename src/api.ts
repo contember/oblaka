@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { CloudflareDeployExecutor } from './commands/deploy'
 import type { Input } from './commands/input'
-import type { ConfigWriter, GeneratedConfig } from './commands/resource-processor'
+import { type ConfigWriter, DEFAULT_CONFIG_FILE_NAME, type GeneratedConfig } from './commands/resource-processor'
 import type { Worker } from './resources'
 
 export type Definition = Worker
@@ -16,6 +16,8 @@ export interface DeployOptions {
 	dryRun?: boolean
 	remote?: boolean
 	cwd?: string
+	/** File name (not a path) of the generated wrangler config in each worker's `dir`. Defaults to `wrangler.jsonc`. */
+	configFileName?: string
 }
 
 export interface DeployResult {
@@ -28,7 +30,7 @@ export interface DeployResult {
  * (the result of `define()` / `new Worker(...)`) against Cloudflare.
  *
  * Unlike the CLI, this skips loading the recipe file and works directly on the in-memory
- * definition. It always returns the generated wrangler config(s); `wrangler.jsonc` is written
+ * definition. It always returns the generated wrangler config(s); the config (`wrangler.jsonc` by default) is written
  * to disk only when `remote` is set and `dryRun` is not (mirroring the CLI deploy behavior).
  *
  * State is stored in the `cf-state` KV namespace under a per-env key (the `env` value).
@@ -57,6 +59,7 @@ export const deploy = async (definition: Definition | undefined, options: Deploy
 		// Programmatic deploy always supplies an explicit apiToken, so wrangler's
 		// OAuth token provider (and its persistence) is never exercised.
 		persistToken: false,
+		configFileName: options.configFileName || DEFAULT_CONFIG_FILE_NAME,
 	}
 
 	const shouldWrite = remote && !dryRun

@@ -28,6 +28,7 @@ export class CloudflareValidateExecutor {
 					mismatches.push(`${configPath}: content is outdated, run the generator to update`)
 				}
 			},
+			this.input.configFileName,
 		)
 		await resourceProcessor.run({ main: this.input.main, env: this.input.env })
 

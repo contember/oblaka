@@ -71,7 +71,7 @@ export class CloudflareDeployExecutor implements ResourceApplier {
 	}
 
 	private async run(definition: Worker | undefined): Promise<GeneratedConfig[]> {
-		const resourceProcessor = new ResourceProcessor(this, this.configWriter)
+		const resourceProcessor = new ResourceProcessor(this, this.configWriter, this.input.configFileName)
 		const generated = await resourceProcessor.process({ definition, env: this.input.env })
 
 		this.log(`Changed ${this.totalChanged} resources`)

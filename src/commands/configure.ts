@@ -24,6 +24,7 @@ export class CloudflareConfigureExecutor {
 				await fs.writeFile(configPath, content)
 				written.push(configPath)
 			},
+			this.input.configFileName,
 		)
 
 		try {

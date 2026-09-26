@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util'
+import { DEFAULT_CONFIG_FILE_NAME, validateConfigFileName } from './resource-processor'
 
 export const input = (() => {
 	const { values, positionals } = parseArgs({
@@ -16,12 +17,20 @@ export const input = (() => {
 			validate: { type: 'boolean' },
 			'out-state': { type: 'string' },
 			'no-persist-token': { type: 'boolean' },
+			config: { type: 'string' },
 		},
 	})
 
 	const main = positionals[0]
 	if (!main) {
 		console.error('Missing config entrypoint argument')
+		process.exit(1)
+	}
+
+	const configFileName = values.config || DEFAULT_CONFIG_FILE_NAME
+	const configFileNameError = validateConfigFileName(configFileName)
+	if (configFileNameError) {
+		console.error(`Invalid --config: ${configFileNameError}`)
 		process.exit(1)
 	}
 
@@ -40,6 +49,8 @@ export const input = (() => {
 		// When using OAuth, persist the refreshed token back to wrangler's config
 		// unless the user opts out (e.g. read-only credentials dir).
 		persistToken: !(values['no-persist-token'] ?? false),
+		// Name of the generated wrangler config, written into each worker's `dir`.
+		configFileName,
 	}
 })()
 

@@ -70,6 +70,14 @@ Generates a `wrangler.jsonc` config inside each worker directory:
 bunx oblaka oblaka.ts
 ```
 
+To generate a second config next to the default one (for example for a test environment), pass `--config` with a file name. Unlike wrangler's `--config`, it is a bare file name ending in `.json` or `.jsonc`, not a path: the file is written into each worker's `dir`.
+
+```bash
+bunx oblaka oblaka.ts --env test --config wrangler.test.jsonc
+```
+
+Durable Object migration history is read back from the generated file itself, so each config file name keeps its own history. Renaming the config of an already deployed worker starts the migrations from `v0001` again; rename the existing file first instead.
+
 ### Deploy to Cloudflare
 
 Creates resources on Cloudflare and generates the config:
@@ -102,17 +110,17 @@ bunx oblaka oblaka.ts \
 
 ## CLI options
 
-| Option              | Env variable            | Default          | Description                      |
-| ------------------- | ----------------------- | ---------------- | -------------------------------- |
-| `--env`             | `CLOUDFLARE_ENV`        | `local`          | Environment name                 |
-| `--remote`          |                         | `false`          | Deploy resources to Cloudflare   |
-| `--dry-run`         |                         | `false`          | Preview changes without applying |
-| `--account-id`      | `CLOUDFLARE_ACCOUNT_ID` |                  | Cloudflare account ID            |
-| `--api-token`       | `CLOUDFLARE_API_TOKEN`  |                  | Cloudflare API token             |
-| `--config`          |                         | `wrangler.jsonc` | Output config filename           |
-| `--state-namespace` |                         | `cf-state`       | KV namespace for state storage   |
-| `--destroy`         |                         | `false`          | Destroy managed resources        |
-| `--out-state`       |                         |                  | Export state to a JSON file      |
+| Option              | Env variable            | Default          | Description                          |
+| ------------------- | ----------------------- | ---------------- | ------------------------------------ |
+| `--env`             | `CLOUDFLARE_ENV`        | `local`          | Environment name                     |
+| `--remote`          |                         | `false`          | Deploy resources to Cloudflare       |
+| `--dry-run`         |                         | `false`          | Preview changes without applying     |
+| `--account-id`      | `CLOUDFLARE_ACCOUNT_ID` |                  | Cloudflare account ID                |
+| `--api-token`       | `CLOUDFLARE_API_TOKEN`  |                  | Cloudflare API token                 |
+| `--config`          |                         | `wrangler.jsonc` | Output config file name (not a path) |
+| `--state-namespace` |                         | `cf-state`       | KV namespace for state storage       |
+| `--destroy`         |                         | `false`          | Destroy managed resources            |
+| `--out-state`       |                         |                  | Export state to a JSON file          |
 
 ## State management
 

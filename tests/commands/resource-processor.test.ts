@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { type ConfigWriter, type ResourceApplier, ResourceProcessor } from '../../src/commands/resource-processor'
+import { type ConfigWriter, type ResourceApplier, ResourceProcessor, validateConfigFileName } from '../../src/commands/resource-processor'
 
 const noopApplier: ResourceApplier = {
 	async applyResource() {
@@ -54,6 +54,49 @@ describe('ResourceProcessor', () => {
 		expect(config.compatibility_flags).toEqual(['nodejs_compat'])
 
 		await fs.rm(dir, { recursive: true })
+	})
+
+	test('writes config under a custom file name', async () => {
+		const dir = await createFixtureDir({
+			'wrangler.test.jsonc': JSON.stringify({
+				migrations: [{ tag: 'v0001', new_sqlite_classes: ['OtherDO'] }],
+			}),
+		})
+		await fs.writeFile(
+			path.join(dir, 'oblaka.ts'),
+			`
+				import { Worker } from '${path.resolve('src/resources/worker')}'
+				export default ({ env }) => new Worker({
+					dir: '${dir}'.replace(/\\\\/g, '/'),
+					name: 'test-worker',
+					compatibility_flags: ['nodejs_compat'],
+					bindings: {},
+					deleteDurableObjectsOnRemoval: false,
+				})
+			`,
+		)
+
+		const { written, writer } = captureWriter()
+		const processor = new ResourceProcessor(noopApplier, writer, 'wrangler.test.jsonc')
+		await processor.run({ main: path.join(dir, 'oblaka.ts'), env: 'test' })
+
+		expect(written).toHaveLength(1)
+		expect(written[0].path).toBe(path.join(dir, 'wrangler.test.jsonc'))
+		// existing migrations are read from the custom file, not from wrangler.jsonc
+		const config = JSON.parse(written[0].content.replace(/\/\*\*[\s\S]*?\*\/\n/, ''))
+		expect(config.migrations).toEqual([{ tag: 'v0001', new_sqlite_classes: ['OtherDO'] }])
+
+		await fs.rm(dir, { recursive: true })
+	})
+
+	test('rejects a config file name that is a path or not JSON', () => {
+		for (const name of ['apps/api/wrangler.jsonc', '/abs/wrangler.jsonc', '../shared.jsonc', 'wrangler.toml', 'wrangler', '']) {
+			expect(validateConfigFileName(name)).toBeDefined()
+			expect(() => new ResourceProcessor(noopApplier, undefined, name)).toThrow()
+		}
+		for (const name of ['wrangler.jsonc', 'wrangler.test.jsonc', 'wrangler.json']) {
+			expect(validateConfigFileName(name)).toBeUndefined()
+		}
 	})
 
 	test('processes bindings and generates config', async () => {

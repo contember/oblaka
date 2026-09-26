@@ -6,13 +6,36 @@ import type { Config, DefineFn, Resource } from '../types'
 import { getNextMigrationTag } from '../utils/migrations'
 import { tryReadFile } from './utils/fs'
 
+export const DEFAULT_CONFIG_FILE_NAME = 'wrangler.jsonc'
+
+/**
+ * Returns an error message when `name` cannot be used as the generated config's file name.
+ * It is joined onto each worker's `dir`, so it must be a bare file name, and the generator
+ * always writes JSONC, so it must end in `.json` or `.jsonc`.
+ */
+export const validateConfigFileName = (name: string): string | undefined => {
+	if (!name || path.basename(name) !== name || name === '.' || name === '..') {
+		return `Config file name must be a bare file name without a directory, got '${name}'`
+	}
+	if (!/\.jsonc?$/.test(name)) {
+		return `Config file name must end with .json or .jsonc, got '${name}'`
+	}
+	return undefined
+}
+
 export class ResourceProcessor {
 	private workers: Worker[] = []
 
 	constructor(
 		private readonly resourceHandler: ResourceApplier,
 		private readonly configWriter: ConfigWriter = defaultConfigWriter,
+		private readonly configFileName: string = DEFAULT_CONFIG_FILE_NAME,
 	) {
+		// Fail before any resource is applied, not when the config is written.
+		const error = validateConfigFileName(configFileName)
+		if (error) {
+			throw new Error(error)
+		}
 	}
 
 	public async run({ main, env }: {
@@ -49,7 +72,7 @@ export class ResourceProcessor {
 		if (!worker) {
 			return undefined
 		}
-		const configPath = path.join(worker.options.dir, 'wrangler.jsonc')
+		const configPath = path.join(worker.options.dir, this.configFileName)
 		const existingConfig = jsoncParser.parse((await tryReadFile(configPath)) || '{}') as Config
 		const { bindings, dir, deleteDurableObjectsOnRemoval, ...workerConfig } = worker.options
 
