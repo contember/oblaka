@@ -1,5 +1,5 @@
 import type { BindableResource, Config, Context, ResourceDestroyer } from '../types'
-import { getNextMigrationTag } from '../utils/migrations'
+import { withDurableObjectClass } from '../utils/migrations'
 
 export interface ContainerState {
 	name: string
@@ -47,23 +47,9 @@ export class Container implements BindableResource<ContainerState> {
 	}
 
 	configureBinding(args: { config: Config; binding: string; state?: ContainerState; env: string }): Config {
-		const hasMigration = args.config?.migrations?.find((it: { new_sqlite_classes?: string[] }) =>
-			it.new_sqlite_classes?.includes(this.options.className)
-		)
-
 		return {
 			...args.config,
-			migrations: [
-				...(args.config.migrations ?? []),
-				...(hasMigration
-					? []
-					: [
-						{
-							tag: getNextMigrationTag(args.config),
-							new_sqlite_classes: [this.options.className],
-						},
-					]),
-			],
+			migrations: withDurableObjectClass(args.config, this.options.className),
 			containers: [
 				...(args.config.containers ?? []),
 				{

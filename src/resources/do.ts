@@ -1,5 +1,5 @@
 import type { BindableResource, Config, ResourceDestroyer } from '../types'
-import { getNextMigrationTag } from '../utils/migrations'
+import { withDurableObjectClass } from '../utils/migrations'
 
 export interface DurableObjectState {
 	name: string
@@ -10,6 +10,12 @@ export class DurableObject implements BindableResource<DurableObjectState> {
 		public readonly options: {
 			name: string
 			className: string
+			/**
+			 * Previous class name when the class was renamed. Generates a `renamed_classes`
+			 * migration, so the stored data moves to the new class instead of being deleted.
+			 * Safe to keep after the rename is deployed.
+			 */
+			renamedFrom?: string
 		},
 	) {}
 
@@ -24,21 +30,9 @@ export class DurableObject implements BindableResource<DurableObjectState> {
 	}
 
 	configureBinding(args: { config: Config; state?: DurableObjectState; binding: string; env: string }): Config {
-		const hasMigration = args.config?.migrations?.find(
-			(it: { new_sqlite_classes?: string[]; renamed_classes?: { from: string; to: string }[] }) =>
-				it.new_sqlite_classes?.includes(this.options.className)
-				|| it.renamed_classes?.some(r => r.to === this.options.className),
-		)
-
 		return {
 			...args.config,
-			migrations: [
-				...(args.config.migrations ?? []),
-				...(hasMigration ? [] : [{
-					tag: getNextMigrationTag(args.config),
-					new_sqlite_classes: [this.options.className],
-				}]),
-			],
+			migrations: withDurableObjectClass(args.config, this.options.className, this.options.renamedFrom),
 			durable_objects: {
 				...(args.config?.durable_objects ?? {}),
 				bindings: [
