@@ -3,7 +3,8 @@ import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { Worker } from '../resources'
 import type { Config, DefineFn, Resource } from '../types'
-import { getNextMigrationTag } from '../utils/migrations'
+import type { DurableObjectMigration } from '../utils/migrations'
+import { deleteDurableObjectClasses, getBoundDurableObjectClasses, getRemovedDurableObjects, validateDurableObjects } from './durable-objects'
 import { tryReadFile } from './utils/fs'
 
 export const DEFAULT_CONFIG_FILE_NAME = 'wrangler.jsonc'
@@ -54,6 +55,7 @@ export class ResourceProcessor {
 		const generated: GeneratedConfig[] = []
 
 		if (definition) {
+			await this.validate(definition)
 			this.workers.push(definition)
 		}
 
@@ -67,14 +69,33 @@ export class ResourceProcessor {
 		return generated
 	}
 
+	/** Checks every worker in the tree before any resource is applied or any config is written. */
+	private async validate(root: Worker): Promise<void> {
+		const queue = [root]
+		while (queue.length) {
+			const worker = queue.shift()!
+			validateDurableObjects(worker, await this.readExistingConfig(worker))
+			for (const binding of Object.values(worker.options.bindings ?? {})) {
+				if (binding instanceof Worker) {
+					queue.push(binding)
+				}
+			}
+		}
+	}
+
+	private async readExistingConfig(worker: Worker): Promise<Config> {
+		const configPath = path.join(worker.options.dir, this.configFileName)
+		return jsoncParser.parse((await tryReadFile(configPath)) || '{}') as Config
+	}
+
 	private async processWorker(env: string): Promise<GeneratedConfig | undefined> {
 		const worker = this.workers.shift()
 		if (!worker) {
 			return undefined
 		}
 		const configPath = path.join(worker.options.dir, this.configFileName)
-		const existingConfig = jsoncParser.parse((await tryReadFile(configPath)) || '{}') as Config
-		const { bindings, dir, deleteDurableObjectsOnRemoval, ...workerConfig } = worker.options
+		const existingConfig = await this.readExistingConfig(worker)
+		const { bindings, dir, deleteDurableObjectsOnRemoval, deletedDurableObjects, ...workerConfig } = worker.options
 
 		let config: Config = {
 			...workerConfig,
@@ -84,7 +105,10 @@ export class ResourceProcessor {
 		const selfState = await this.resourceHandler.applyResource(worker)
 		config = worker.configureSelf({ config, state: selfState })
 
-		for (const [bindingName, binding] of Object.entries(worker.options.bindings ?? {})) {
+		for (const [bindingName, binding] of Object.entries(bindings ?? {})) {
+			if (!binding) {
+				continue
+			}
 			if (binding instanceof Worker) {
 				this.workers.push(binding)
 			}
@@ -92,34 +116,15 @@ export class ResourceProcessor {
 			config = binding.configureBinding({ config, binding: bindingName, state, env })
 		}
 
-		if (deleteDurableObjectsOnRemoval !== false) {
-			const oldClasses = new Set((existingConfig.durable_objects?.bindings ?? []).map((b: { class_name: string }) => b.class_name))
-			const newClasses = new Set((config.durable_objects?.bindings ?? []).map((b: { class_name: string }) => b.class_name))
-			const deletedClasses = [...oldClasses].filter(c => !newClasses.has(c))
-
-			if (deletedClasses.length > 0) {
-				const deletedClassesSet = new Set(deletedClasses)
-				config = {
-					...config,
-					migrations: [
-						...(config.migrations ?? [])
-							.flatMap(m => {
-								if (!m.new_sqlite_classes) return [m]
-								const filtered = m.new_sqlite_classes.filter((c: string) => !deletedClassesSet.has(c))
-								if (filtered.length === 0) {
-									const { new_sqlite_classes: _, ...rest } = m
-									return Object.keys(rest).length > 1 ? [rest as typeof m] : []
-								}
-								return [{ ...m, new_sqlite_classes: filtered }]
-							}),
-						{
-							tag: getNextMigrationTag(config),
-							deleted_classes: deletedClasses,
-						},
-					],
-				}
-			}
-		}
+		const removedDurableObjects = getRemovedDurableObjects({
+			workerName: worker.options.name,
+			migrations: config.migrations as DurableObjectMigration[] | undefined,
+			previouslyBound: getBoundDurableObjectClasses(existingConfig),
+			bound: getBoundDurableObjectClasses(config),
+			deletedDurableObjects: deletedDurableObjects ?? [],
+			deleteDurableObjectsOnRemoval,
+		})
+		config = deleteDurableObjectClasses(config, removedDurableObjects)
 
 		const content = `/**\n * File is auto generated DO NOT EDIT\n */\n${JSON.stringify(config, null, '\t')}\n`
 		await this.configWriter(configPath, content)

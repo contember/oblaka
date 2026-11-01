@@ -160,59 +160,242 @@ describe('ResourceProcessor', () => {
 		await fs.rm(dir, { recursive: true })
 	})
 
-	test('detects deleted durable objects and adds deletion migration', async () => {
-		const workerDir = await createFixtureDir({
-			'wrangler.jsonc': JSON.stringify({
-				name: 'test-worker',
-				durable_objects: {
-					bindings: [
-						{ name: 'DO', class_name: 'MyDO' },
-						{ name: 'OLD_DO', class_name: 'OldDO' },
-					],
-				},
-				migrations: [
-					{ tag: 'v0001', new_sqlite_classes: ['MyDO'] },
-					{ tag: 'v0002', new_sqlite_classes: ['OldDO'] },
-				],
-			}),
-		})
+	const defaultExistingDoConfig = {
+		name: 'test-worker',
+		durable_objects: {
+			bindings: [
+				{ name: 'DO', class_name: 'MyDO' },
+				{ name: 'OLD_DO', class_name: 'OldDO' },
+			],
+		},
+		migrations: [
+			{ tag: 'v0001', new_sqlite_classes: ['MyDO'] },
+			{ tag: 'v0002', new_sqlite_classes: ['OldDO'] },
+		],
+	}
 
+	const doFixture = async (workerOptions: string, existingConfig: object = defaultExistingDoConfig) => {
+		const workerDir = await createFixtureDir({ 'wrangler.jsonc': JSON.stringify(existingConfig) })
 		const entryDir = await createFixtureDir({
 			'oblaka.ts': `
 				import { Worker } from '${path.resolve('src/resources/worker')}'
 				import { DurableObject } from '${path.resolve('src/resources/do')}'
+				import { KVNamespace } from '${path.resolve('src/resources/kv')}'
 				export default ({ env }) => new Worker({
 					dir: '${workerDir}'.replace(/\\\\/g, '/'),
 					name: 'test-worker',
 					compatibility_flags: ['nodejs_compat'],
-					bindings: {
-						DO: new DurableObject({ name: 'my-do', className: 'MyDO' }),
-					},
+					${workerOptions}
 				})
 			`,
 		})
 
 		const { written, writer } = captureWriter()
-		const processor = new ResourceProcessor(noopApplier, writer)
-		await processor.run({ main: path.join(entryDir, 'oblaka.ts'), env: 'local' })
+		const applied: unknown[] = []
+		const applier: ResourceApplier = {
+			async applyResource(resource) {
+				applied.push(resource)
+				return undefined
+			},
+		}
+		const run = () => new ResourceProcessor(applier, writer).run({ main: path.join(entryDir, 'oblaka.ts'), env: 'local' })
+		const parse = () => JSON.parse(written[0].content.replace(/\/\*\*[\s\S]*?\*\/\n/, ''))
+		const cleanup = async () => {
+			await fs.rm(workerDir, { recursive: true })
+			await fs.rm(entryDir, { recursive: true })
+		}
+		return { run, parse, written, applied, cleanup }
+	}
 
-		const config = JSON.parse(written[0].content.replace(/\/\*\*[\s\S]*?\*\/\n/, ''))
+	test('fails before applying anything when a durable object is removed without being listed for deletion', async () => {
+		const fixture = await doFixture(`bindings: {
+			CACHE: new KVNamespace({ name: 'cache' }),
+			DO: new DurableObject({ name: 'my-do', className: 'MyDO' }),
+		},`)
+		try {
+			await expect(fixture.run()).rejects.toThrow("Durable Object class 'OldDO' is no longer bound")
+			expect(fixture.applied).toHaveLength(0)
+			expect(fixture.written).toHaveLength(0)
+		} finally {
+			await fixture.cleanup()
+		}
+	})
 
-		// OldDO's new_sqlite_classes migration should be removed
-		const oldMigration = config.migrations.find((m: any) => m.new_sqlite_classes?.includes('OldDO'))
-		expect(oldMigration).toBeUndefined()
+	test('leaves alone a live class that was not bound in the previous config', async () => {
+		const fixture = await doFixture(`bindings: { DO: new DurableObject({ name: 'my-do', className: 'MyDO' }) },`, {
+			...defaultExistingDoConfig,
+			durable_objects: { bindings: [{ name: 'DO', class_name: 'MyDO' }] },
+		})
+		try {
+			await fixture.run()
+			expect(fixture.parse().migrations).toEqual(defaultExistingDoConfig.migrations)
+		} finally {
+			await fixture.cleanup()
+		}
+	})
 
-		// Deletion migration should be added
-		const deletionMigration = config.migrations.find((m: any) => m.deleted_classes)
-		expect(deletionMigration).toBeDefined()
-		expect(deletionMigration.deleted_classes).toEqual(['OldDO'])
+	test('deletes a durable object listed in deletedDurableObjects', async () => {
+		const fixture = await doFixture(`
+			deletedDurableObjects: ['OldDO'],
+			bindings: { DO: new DurableObject({ name: 'my-do', className: 'MyDO' }) },
+		`)
+		try {
+			await fixture.run()
+			expect(fixture.parse().migrations).toEqual([
+				{ tag: 'v0001', new_sqlite_classes: ['MyDO'] },
+				{ tag: 'v0003', deleted_classes: ['OldDO'] },
+			])
+		} finally {
+			await fixture.cleanup()
+		}
+	})
 
-		// MyDO migration should still exist
-		const myDoMigration = config.migrations.find((m: any) => m.new_sqlite_classes?.includes('MyDO'))
-		expect(myDoMigration).toBeDefined()
+	test('keeps a longer history intact when deleting a durable object', async () => {
+		const migrations = [
+			{ tag: 'v0001', new_sqlite_classes: ['MyDO', 'OldDO'] },
+			{ tag: 'v0002', deleted_classes: ['OldDO'] },
+			{ tag: 'v0003', new_sqlite_classes: ['OldDO'] },
+		]
+		const fixture = await doFixture(
+			`
+			deletedDurableObjects: ['OldDO'],
+			bindings: { DO: new DurableObject({ name: 'my-do', className: 'MyDO' }) },
+		`,
+			{ ...defaultExistingDoConfig, migrations },
+		)
+		try {
+			await fixture.run()
+			expect(fixture.parse().migrations).toEqual([...migrations, { tag: 'v0004', deleted_classes: ['OldDO'] }])
+		} finally {
+			await fixture.cleanup()
+		}
+	})
 
-		await fs.rm(workerDir, { recursive: true })
-		await fs.rm(entryDir, { recursive: true })
+	test('deletes a removed durable object when deleteDurableObjectsOnRemoval is true', async () => {
+		const fixture = await doFixture(`
+			deleteDurableObjectsOnRemoval: true,
+			bindings: { DO: new DurableObject({ name: 'my-do', className: 'MyDO' }) },
+		`)
+		try {
+			await fixture.run()
+			expect(fixture.parse().migrations.at(-1)).toEqual({ tag: 'v0003', deleted_classes: ['OldDO'] })
+		} finally {
+			await fixture.cleanup()
+		}
+	})
+
+	test('keeps an already deleted durable object deleted without a new migration', async () => {
+		const fixture = await doFixture(
+			`
+			deletedDurableObjects: ['OldDO'],
+			bindings: { DO: new DurableObject({ name: 'my-do', className: 'MyDO' }) },
+		`,
+			{
+				name: 'test-worker',
+				durable_objects: { bindings: [{ name: 'DO', class_name: 'MyDO' }] },
+				migrations: [
+					{ tag: 'v0001', new_sqlite_classes: ['MyDO'] },
+					{ tag: 'v0003', deleted_classes: ['OldDO'] },
+				],
+			},
+		)
+		try {
+			await fixture.run()
+			expect(fixture.parse().migrations).toHaveLength(2)
+		} finally {
+			await fixture.cleanup()
+		}
+	})
+
+	test('fails when a durable object is both bound and listed in deletedDurableObjects', async () => {
+		const fixture = await doFixture(`
+			deletedDurableObjects: ['MyDO', 'OldDO'],
+			bindings: { DO: new DurableObject({ name: 'my-do', className: 'MyDO' }) },
+		`)
+		try {
+			await expect(fixture.run()).rejects.toThrow("'MyDO' is listed in deletedDurableObjects but bound")
+		} finally {
+			await fixture.cleanup()
+		}
+	})
+
+	test('renames a durable object with renamedFrom instead of deleting it', async () => {
+		const fixture = await doFixture(`
+			bindings: {
+				DO: new DurableObject({ name: 'my-do', className: 'MyDO' }),
+				NEW_DO: new DurableObject({ name: 'new-do', className: 'NewDO', renamedFrom: 'OldDO' }),
+			},
+		`)
+		try {
+			await fixture.run()
+			expect(fixture.parse().migrations).toEqual([
+				...defaultExistingDoConfig.migrations,
+				{ tag: 'v0003', renamed_classes: [{ from: 'OldDO', to: 'NewDO' }] },
+			])
+		} finally {
+			await fixture.cleanup()
+		}
+	})
+
+	test('fails when renamedFrom names a class that is still bound', async () => {
+		const fixture = await doFixture(`
+			bindings: {
+				OLD_DO: new DurableObject({ name: 'old-do', className: 'OldDO' }),
+				NEW_DO: new DurableObject({ name: 'new-do', className: 'NewDO', renamedFrom: 'OldDO' }),
+			},
+			deleteDurableObjectsOnRemoval: false,
+		`)
+		try {
+			await expect(fixture.run()).rejects.toThrow("is renamed from 'OldDO', which is still bound")
+		} finally {
+			await fixture.cleanup()
+		}
+	})
+
+	test('fails when two classes are renamed from the same class', async () => {
+		const fixture = await doFixture(`
+			bindings: {
+				DO: new DurableObject({ name: 'my-do', className: 'MyDO' }),
+				A: new DurableObject({ name: 'a', className: 'A', renamedFrom: 'OldDO' }),
+				B: new DurableObject({ name: 'b', className: 'B', renamedFrom: 'OldDO' }),
+			},
+		`)
+		try {
+			await expect(fixture.run()).rejects.toThrow("'A' and 'B' are both renamed from 'OldDO'")
+		} finally {
+			await fixture.cleanup()
+		}
+	})
+
+	test('fails before writing any config when a child worker removes a durable object', async () => {
+		const childDir = await createFixtureDir({ 'wrangler.jsonc': JSON.stringify(defaultExistingDoConfig) })
+		const parentDir = await createFixtureDir({
+			'oblaka.ts': `
+				import { Worker } from '${path.resolve('src/resources/worker')}'
+				export default ({ env }) => new Worker({
+					dir: '${path.resolve('.')}'.replace(/\\\\/g, '/'),
+					name: 'parent',
+					compatibility_flags: [],
+					bindings: {
+						CHILD: new Worker({
+							dir: '${childDir}'.replace(/\\\\/g, '/'),
+							name: 'child',
+							compatibility_flags: [],
+							bindings: {},
+						}),
+					},
+				})
+			`,
+		})
+		const { written, writer } = captureWriter()
+		try {
+			await expect(new ResourceProcessor(noopApplier, writer).run({ main: path.join(parentDir, 'oblaka.ts'), env: 'local' }))
+				.rejects.toThrow("Worker 'child'")
+			expect(written).toHaveLength(0)
+		} finally {
+			await fs.rm(childDir, { recursive: true })
+			await fs.rm(parentDir, { recursive: true })
+		}
 	})
 
 	test('skips DO deletion when deleteDurableObjectsOnRemoval is false', async () => {
@@ -282,6 +465,34 @@ describe('ResourceProcessor', () => {
 
 		const config = JSON.parse(written[0].content.replace(/\/\*\*[\s\S]*?\*\/\n/, ''))
 		expect(config.deleteDurableObjectsOnRemoval).toBeUndefined()
+
+		await fs.rm(dir, { recursive: true })
+	})
+
+	test('skips bindings set to false, null or undefined', async () => {
+		const dir = await createFixtureDir({
+			'oblaka.ts': `
+				import { Worker } from '${path.resolve('src/resources/worker')}'
+				import { KVNamespace } from '${path.resolve('src/resources/kv')}'
+				export default ({ env }) => new Worker({
+					dir: '${path.resolve('.')}'.replace(/\\\\/g, '/'),
+					name: 'test-worker',
+					compatibility_flags: [],
+					bindings: {
+						CACHE: new KVNamespace({ name: 'cache' }),
+						OFF: env === 'production' && new KVNamespace({ name: 'off' }),
+						NONE: null,
+						MISSING: undefined,
+					},
+				})
+			`,
+		})
+
+		const { written, writer } = captureWriter()
+		await new ResourceProcessor(noopApplier, writer).run({ main: path.join(dir, 'oblaka.ts'), env: 'local' })
+
+		const config = JSON.parse(written[0].content.replace(/\/\*\*[\s\S]*?\*\/\n/, ''))
+		expect(config.kv_namespaces.map((kv: { binding: string }) => kv.binding)).toEqual(['CACHE'])
 
 		await fs.rm(dir, { recursive: true })
 	})
