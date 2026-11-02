@@ -9,11 +9,14 @@ const unauthorized = () =>
 	})
 
 const authHeaders: string[] = []
+const bodies: (BodyInit | null | undefined)[] = []
 
 const mockFetch = (responses: Response[]) => {
 	authHeaders.length = 0
+	bodies.length = 0
 	return spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
 		authHeaders.push(new Headers(init?.headers).get('Authorization') ?? '')
+		bodies.push(init?.body)
 		const next = responses.shift()
 		if (!next) {
 			throw new Error('unexpected request')
@@ -64,6 +67,30 @@ describe('CloudflareClient 401 handling', () => {
 		const client = new CloudflareClient({ accountId: 'acc', getToken: async () => 'api-token' })
 
 		await expect(client.fetch({ method: 'GET', url: '/storage/kv/namespaces' })).rejects.toThrow('Unauthorized')
+		expect(authHeaders).toHaveLength(1)
+	})
+
+	test('retries a POST with the same body', async () => {
+		spy = mockFetch([unauthorized(), ok({ id: 'ns' })])
+		const client = new CloudflareClient({ accountId: 'acc', getToken: async () => 'stale', refreshToken: async () => 'fresh' })
+
+		await client.fetch({ method: 'POST', url: '/storage/kv/namespaces', body: { title: 'state' } })
+		expect(bodies).toEqual(['{"title":"state"}', '{"title":"state"}'])
+	})
+
+	test('keeps the request context when the refresh itself fails', async () => {
+		spy = mockFetch([unauthorized()])
+		const client = new CloudflareClient({
+			accountId: 'acc',
+			getToken: async () => 'stale',
+			refreshToken: async () => {
+				throw new Error('Failed to refresh Cloudflare OAuth token (400)')
+			},
+		})
+
+		const failed = client.fetch({ method: 'GET', url: '/storage/kv/namespaces' })
+		await expect(failed).rejects.toThrow('/storage/kv/namespaces')
+		await expect(failed).rejects.toThrow('Failed to refresh Cloudflare OAuth token (400)')
 		expect(authHeaders).toHaveLength(1)
 	})
 })

@@ -33,8 +33,15 @@ export class CloudflareClient {
 		let response = await send(token)
 		let refreshed = false
 		if (response.status === 401 && this.config.refreshToken) {
-			await response.body?.cancel()
-			response = await send(await this.config.refreshToken(token))
+			const rejectedBody = await response.text()
+			let replacement: string
+			try {
+				replacement = await this.config.refreshToken(token)
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : String(error)
+				throw new Error(`Failed to fetch ${url}: ${response.statusText} ${rejectedBody}\nRefreshing the token failed: ${reason}`, { cause: error })
+			}
+			response = await send(replacement)
 			refreshed = true
 		}
 

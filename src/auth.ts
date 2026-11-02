@@ -142,7 +142,7 @@ export async function refreshAccessToken(
 	})
 	if (!response.ok) {
 		throw new Error(
-			`Failed to refresh Cloudflare OAuth token (${response.status}). Run \`wrangler login\` to re-authenticate.`,
+			`Failed to refresh Cloudflare OAuth token (${response.status}): ${await response.text()}\nRun \`wrangler login\` to re-authenticate.`,
 		)
 	}
 	const data = (await response.json()) as TokenEndpointResponse
@@ -189,74 +189,71 @@ export function createWranglerTokenProvider(options: WranglerTokenProviderOption
 	const configPath = options.configPath ?? getWranglerConfigPath()
 	const now = options.now ?? Date.now
 	const persist = options.persist ?? true
-	let cached: { token: string; expiresAt: number } | null = null
+	// The newest credentials known to this process. With persist off (or a failed
+	// write) they are newer than the file, including a rotated refresh token.
+	let current: RefreshedCredentials & { expiresAt: number } | null = null
+	// The file's access token as of our last read or write; a different value
+	// means wrangler (or another run) updated the file since.
+	let lastFileToken: string | null = null
+	const rejectedTokens = new Set<string>()
 	// Shared so concurrent callers don't each spend the refresh token; Cloudflare
 	// may rotate it, which would make every refresh but the first fail.
 	let refreshing: Promise<string> | null = null
 
-	const isFresh = (expiresAt: number) => Number.isFinite(expiresAt) && expiresAt - EXPIRY_BUFFER_MS > now()
+	const usable = (creds: { oauthToken: string; expiresAt: number } | null) =>
+		creds !== null && !rejectedTokens.has(creds.oauthToken) && Number.isFinite(creds.expiresAt)
+		&& creds.expiresAt - EXPIRY_BUFFER_MS > now()
 
-	const readStored = () => {
+	const syncFromFile = () => {
 		const creds = readWranglerCredentials(configPath)
 		if (!creds) {
 			throw new Error(
 				`No Cloudflare credentials found. Set CLOUDFLARE_API_TOKEN, or run \`wrangler login\` (looked in ${configPath}).`,
 			)
 		}
-		return { creds, expiresAt: Date.parse(creds.expirationTime) }
+		if (current === null || creds.oauthToken !== lastFileToken) {
+			lastFileToken = creds.oauthToken
+			current = { ...creds, expiresAt: Date.parse(creds.expirationTime) }
+		}
+		return current
 	}
 
 	const doRefresh = async (refreshToken: string): Promise<string> => {
 		const refreshed = await refreshAccessToken(refreshToken, { fetch: options.fetch, now })
+		current = { ...refreshed, expiresAt: Date.parse(refreshed.expirationTime) }
 		if (persist) {
 			try {
 				writeWranglerCredentials(configPath, refreshed)
+				lastFileToken = refreshed.oauthToken
 			} catch (error) {
 				console.warn(`Warning: refreshed Cloudflare OAuth token but could not persist it to ${configPath}: ${error}`)
 			}
 		}
-		cached = { token: refreshed.oauthToken, expiresAt: Date.parse(refreshed.expirationTime) }
 		return refreshed.oauthToken
 	}
 
-	const refresh = (refreshToken: string): Promise<string> => {
-		refreshing ??= doRefresh(refreshToken).finally(() => {
+	const obtain = async (): Promise<string> => {
+		if (refreshing) {
+			return refreshing
+		}
+		if (current && usable(current)) {
+			return current.oauthToken
+		}
+		const latest = syncFromFile()
+		if (usable(latest)) {
+			return latest.oauthToken
+		}
+		refreshing = doRefresh(latest.refreshToken).finally(() => {
 			refreshing = null
 		})
 		return refreshing
 	}
 
 	return {
-		async getToken() {
-			if (refreshing) {
-				return refreshing
-			}
-			if (cached && isFresh(cached.expiresAt)) {
-				return cached.token
-			}
-			const { creds, expiresAt } = readStored()
-			if (isFresh(expiresAt)) {
-				cached = { token: creds.oauthToken, expiresAt }
-				return creds.oauthToken
-			}
-			return refresh(creds.refreshToken)
-		},
-
-		async refreshToken(rejected) {
-			if (refreshing) {
-				return refreshing
-			}
-			// Another request already replaced the rejected token.
-			if (cached && cached.token !== rejected && isFresh(cached.expiresAt)) {
-				return cached.token
-			}
-			// Wrangler may have refreshed (and rotated the refresh token) since we read the file.
-			const { creds, expiresAt } = readStored()
-			if (creds.oauthToken !== rejected && isFresh(expiresAt)) {
-				cached = { token: creds.oauthToken, expiresAt }
-				return creds.oauthToken
-			}
-			return refresh(creds.refreshToken)
+		getToken: obtain,
+		refreshToken(rejected) {
+			rejectedTokens.add(rejected)
+			return obtain()
 		},
 	}
 }
