@@ -102,9 +102,12 @@ describe('refreshAccessToken', () => {
 		expect(result.refreshToken).toBe('refresh-123')
 	})
 
-	test('throws a helpful error on a non-ok response', async () => {
-		const fetchMock = (async () => tokenResponse({}, false, 401)) as unknown as typeof fetch
-		await expect(refreshAccessToken('refresh-123', { fetch: fetchMock })).rejects.toThrow('wrangler login')
+	test('throws a helpful error with the endpoint response on a non-ok response', async () => {
+		const failed = refreshAccessToken('refresh-123', {
+			fetch: async () => new Response('{"error":"invalid_grant"}', { status: 400 }),
+		})
+		await expect(failed).rejects.toThrow('wrangler login')
+		await expect(failed).rejects.toThrow('invalid_grant')
 	})
 
 	test('throws on a 200 response missing required fields instead of producing a bad token', async () => {
@@ -124,7 +127,7 @@ describe('createWranglerTokenProvider', () => {
 			fetch: fetchMock,
 			now: () => Date.parse('2026-06-21T14:00:00.000Z'),
 		})
-		expect(await provider()).toBe('access-123')
+		expect(await provider.getToken()).toBe('access-123')
 	})
 
 	test('refreshes and persists in place, preserving unrelated lines', async () => {
@@ -137,7 +140,7 @@ describe('createWranglerTokenProvider', () => {
 			now: () => Date.parse('2026-06-21T16:00:00.000Z'),
 		})
 
-		expect(await provider()).toBe('access-new')
+		expect(await provider.getToken()).toBe('access-new')
 
 		const persisted = readWranglerCredentials(configPath)
 		expect(persisted?.oauthToken).toBe('access-new')
@@ -162,12 +165,121 @@ describe('createWranglerTokenProvider', () => {
 			now: () => Date.parse('2026-06-21T16:00:00.000Z'),
 		})
 
-		expect(await provider()).toBe('access-new')
+		expect(await provider.getToken()).toBe('access-new')
 		expect(fs.readFileSync(configPath, 'utf8')).toBe(before)
 	})
 
 	test('throws a helpful error when no credentials file exists', async () => {
 		const provider = createWranglerTokenProvider({ configPath: path.join(os.tmpdir(), 'oblaka-none-xyz.toml') })
-		await expect(provider()).rejects.toThrow('wrangler login')
+		await expect(provider.getToken()).rejects.toThrow('wrangler login')
+	})
+})
+
+describe('createWranglerTokenProvider refreshToken', () => {
+	const freshNow = () => Date.parse('2026-06-21T14:00:00.000Z')
+
+	test('refreshes a rejected token even though its stored expiry still looks valid', async () => {
+		const configPath = writeTempConfig(SAMPLE)
+		let refreshCalls = 0
+		const provider = createWranglerTokenProvider({
+			configPath,
+			now: freshNow,
+			fetch: async () => {
+				refreshCalls++
+				return Response.json({ access_token: 'access-new', expires_in: 3600, refresh_token: 'refresh-new' })
+			},
+		})
+
+		const rejected = await provider.getToken()
+		expect(rejected).toBe('access-123')
+		expect(refreshCalls).toBe(0)
+
+		expect(await provider.refreshToken(rejected)).toBe('access-new')
+		expect(refreshCalls).toBe(1)
+		expect(readWranglerCredentials(configPath)?.oauthToken).toBe('access-new')
+		expect(await provider.getToken()).toBe('access-new')
+	})
+
+	test('adopts a token wrangler wrote meanwhile instead of spending the refresh token', async () => {
+		const configPath = writeTempConfig(SAMPLE)
+		const provider = createWranglerTokenProvider({
+			configPath,
+			now: freshNow,
+			fetch: async () => {
+				throw new Error('should not refresh')
+			},
+		})
+		const rejected = await provider.getToken()
+		fs.writeFileSync(configPath, SAMPLE.replace('access-123', 'access-from-wrangler').replace('refresh-123', 'refresh-rotated'))
+
+		expect(await provider.refreshToken(rejected)).toBe('access-from-wrangler')
+	})
+
+	test('concurrent refreshes share one token request', async () => {
+		const configPath = writeTempConfig(SAMPLE)
+		let refreshCalls = 0
+		const provider = createWranglerTokenProvider({
+			configPath,
+			now: () => Date.parse('2026-06-21T16:00:00.000Z'),
+			fetch: async () => {
+				refreshCalls++
+				return Response.json({ access_token: `access-${refreshCalls}`, expires_in: 3600, refresh_token: 'refresh-new' })
+			},
+		})
+
+		const tokens = await Promise.all([provider.getToken(), provider.getToken(), provider.refreshToken('access-123')])
+		expect(tokens).toEqual(['access-1', 'access-1', 'access-1'])
+		expect(refreshCalls).toBe(1)
+	})
+
+	test('concurrent 401s on a still-valid token share one refresh', async () => {
+		const configPath = writeTempConfig(SAMPLE)
+		let refreshCalls = 0
+		const provider = createWranglerTokenProvider({
+			configPath,
+			now: freshNow,
+			fetch: async () => {
+				refreshCalls++
+				return Response.json({ access_token: `access-${refreshCalls}`, expires_in: 3600, refresh_token: 'refresh-new' })
+			},
+		})
+		const rejected = await provider.getToken()
+
+		const tokens = await Promise.all([provider.refreshToken(rejected), provider.refreshToken(rejected)])
+		expect(tokens).toEqual(['access-1', 'access-1'])
+		// A 401 that arrives after the refresh finished reuses the new token.
+		expect(await provider.refreshToken(rejected)).toBe('access-1')
+		expect(refreshCalls).toBe(1)
+	})
+
+	test('without persisting, a second 401 refreshes with the rotated refresh token', async () => {
+		const configPath = writeTempConfig(SAMPLE)
+		const sentRefreshTokens: string[] = []
+		const provider = createWranglerTokenProvider({
+			configPath,
+			now: freshNow,
+			persist: false,
+			fetch: async (_url, init) => {
+				sentRefreshTokens.push(new URLSearchParams(String(init.body)).get('refresh_token') ?? '')
+				const n = sentRefreshTokens.length
+				return Response.json({ access_token: `access-${n}`, expires_in: 3600, refresh_token: `refresh-${n}` })
+			},
+		})
+
+		expect(await provider.refreshToken(await provider.getToken())).toBe('access-1')
+		// The file still holds the rejected access-123; it must not be adopted again.
+		expect(await provider.refreshToken('access-1')).toBe('access-2')
+		expect(await provider.getToken()).toBe('access-2')
+		expect(sentRefreshTokens).toEqual(['refresh-123', 'refresh-1'])
+	})
+
+	test('propagates a failed refresh with the wrangler login hint', async () => {
+		const configPath = writeTempConfig(SAMPLE)
+		const provider = createWranglerTokenProvider({
+			configPath,
+			now: freshNow,
+			fetch: async () => new Response('{}', { status: 400 }),
+		})
+		await expect(provider.refreshToken('access-123')).rejects.toThrow('wrangler login')
 	})
 })

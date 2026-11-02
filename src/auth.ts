@@ -113,8 +113,10 @@ interface TokenEndpointResponse {
 	refresh_token?: string
 }
 
+type FetchFn = (url: string, init: RequestInit) => Promise<Response>
+
 interface RefreshDeps {
-	fetch?: typeof fetch
+	fetch?: FetchFn
 	tokenUrl?: string
 	clientId?: string
 	now?: () => number
@@ -140,7 +142,7 @@ export async function refreshAccessToken(
 	})
 	if (!response.ok) {
 		throw new Error(
-			`Failed to refresh Cloudflare OAuth token (${response.status}). Run \`wrangler login\` to re-authenticate.`,
+			`Failed to refresh Cloudflare OAuth token (${response.status}): ${await response.text()}\nRun \`wrangler login\` to re-authenticate.`,
 		)
 	}
 	const data = (await response.json()) as TokenEndpointResponse
@@ -166,47 +168,92 @@ function tokenUrlFromEnv(): string {
 export interface WranglerTokenProviderOptions {
 	configPath?: string
 	now?: () => number
-	fetch?: typeof fetch
+	fetch?: FetchFn
 	/** Persist the refreshed token back to default.toml (default true). */
 	persist?: boolean
 }
 
+export interface WranglerTokenProvider {
+	/** Returns a valid access token, refreshing it once it is within the expiry buffer. */
+	getToken(): Promise<string>
+	/** Returns a replacement for an access token the API rejected, even if its stored expiry still looks valid. */
+	refreshToken(rejected: string): Promise<string>
+}
+
 /**
- * Returns a token provider backed by wrangler's stored OAuth credentials. It
- * returns the access token while valid, refreshing (and persisting) it once it
- * is within the expiry buffer. The result is cached in memory for the process.
+ * Returns a token provider backed by wrangler's stored OAuth credentials. The
+ * current token is cached in memory for the process; refreshed tokens are
+ * persisted so wrangler and later runs pick them up.
  */
-export function createWranglerTokenProvider(options: WranglerTokenProviderOptions = {}): () => Promise<string> {
+export function createWranglerTokenProvider(options: WranglerTokenProviderOptions = {}): WranglerTokenProvider {
 	const configPath = options.configPath ?? getWranglerConfigPath()
 	const now = options.now ?? Date.now
 	const persist = options.persist ?? true
-	let cached: { token: string; expiresAt: number } | null = null
+	// The newest credentials known to this process. With persist off (or a failed
+	// write) they are newer than the file, including a rotated refresh token.
+	let current: RefreshedCredentials & { expiresAt: number } | null = null
+	// The file's access token as of our last read or write; a different value
+	// means wrangler (or another run) updated the file since.
+	let lastFileToken: string | null = null
+	const rejectedTokens = new Set<string>()
+	// Shared so concurrent callers don't each spend the refresh token; Cloudflare
+	// may rotate it, which would make every refresh but the first fail.
+	let refreshing: Promise<string> | null = null
 
-	return async () => {
-		if (cached && cached.expiresAt - EXPIRY_BUFFER_MS > now()) {
-			return cached.token
-		}
+	const usable = (creds: { oauthToken: string; expiresAt: number } | null) =>
+		creds !== null && !rejectedTokens.has(creds.oauthToken) && Number.isFinite(creds.expiresAt)
+		&& creds.expiresAt - EXPIRY_BUFFER_MS > now()
+
+	const syncFromFile = () => {
 		const creds = readWranglerCredentials(configPath)
 		if (!creds) {
 			throw new Error(
 				`No Cloudflare credentials found. Set CLOUDFLARE_API_TOKEN, or run \`wrangler login\` (looked in ${configPath}).`,
 			)
 		}
-		const expiresAt = Date.parse(creds.expirationTime)
-		if (Number.isFinite(expiresAt) && expiresAt - EXPIRY_BUFFER_MS > now()) {
-			cached = { token: creds.oauthToken, expiresAt }
-			return creds.oauthToken
+		if (current === null || creds.oauthToken !== lastFileToken) {
+			lastFileToken = creds.oauthToken
+			current = { ...creds, expiresAt: Date.parse(creds.expirationTime) }
 		}
+		return current
+	}
 
-		const refreshed = await refreshAccessToken(creds.refreshToken, { fetch: options.fetch, now })
+	const doRefresh = async (refreshToken: string): Promise<string> => {
+		const refreshed = await refreshAccessToken(refreshToken, { fetch: options.fetch, now })
+		current = { ...refreshed, expiresAt: Date.parse(refreshed.expirationTime) }
 		if (persist) {
 			try {
 				writeWranglerCredentials(configPath, refreshed)
+				lastFileToken = refreshed.oauthToken
 			} catch (error) {
 				console.warn(`Warning: refreshed Cloudflare OAuth token but could not persist it to ${configPath}: ${error}`)
 			}
 		}
-		cached = { token: refreshed.oauthToken, expiresAt: Date.parse(refreshed.expirationTime) }
 		return refreshed.oauthToken
+	}
+
+	const obtain = async (): Promise<string> => {
+		if (refreshing) {
+			return refreshing
+		}
+		if (current && usable(current)) {
+			return current.oauthToken
+		}
+		const latest = syncFromFile()
+		if (usable(latest)) {
+			return latest.oauthToken
+		}
+		refreshing = doRefresh(latest.refreshToken).finally(() => {
+			refreshing = null
+		})
+		return refreshing
+	}
+
+	return {
+		getToken: obtain,
+		refreshToken(rejected) {
+			rejectedTokens.add(rejected)
+			return obtain()
+		},
 	}
 }
