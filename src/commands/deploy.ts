@@ -20,13 +20,12 @@ export class CloudflareDeployExecutor implements ResourceApplier {
 	}): Promise<GeneratedConfig[]> {
 		// An explicit API token wins; otherwise fall back to wrangler's stored
 		// OAuth credentials (`wrangler login`).
-		const getToken = input.apiToken
-			? async () => input.apiToken
-			: createWranglerTokenProvider({ persist: input.persistToken })
-		const cfClient = new CloudflareClient({
-			accountId: input.accountId,
-			getToken,
-		})
+		const apiToken = input.apiToken
+		const cfClient = new CloudflareClient(
+			apiToken
+				? { accountId: input.accountId, getToken: async () => apiToken }
+				: { accountId: input.accountId, ...createWranglerTokenProvider({ persist: input.persistToken }) },
+		)
 
 		const stateStore = new KVStateStorage(cfClient, input.stateNamespace, input.stateNamespaceId)
 		const stateKey = { env: input.env }
