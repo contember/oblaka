@@ -408,6 +408,51 @@ describe('ResourceProcessor', () => {
 		}
 	})
 
+	test('fails when a container and a durable object of one class disagree on renamedFrom', async () => {
+		const fixture = await doFixture(`
+			bindings: {
+				DO: new DurableObject({ name: 'my-do', className: 'MyDO' }),
+				CONTAINER: new Container({
+					name: 'c', className: 'NewDO', image: './Dockerfile', maxInstances: 1, instanceType: 'basic',
+				}),
+				RENAMED: new DurableObject({ name: 'renamed', className: 'NewDO', renamedFrom: 'OldDO' }),
+			},
+		`)
+		try {
+			await expect(fixture.run()).rejects.toThrow("Durable Object class 'NewDO' is bound more than once with a different renamedFrom")
+			expect(fixture.written).toHaveLength(0)
+		} finally {
+			await fixture.cleanup()
+		}
+	})
+
+	test('accepts another binding without renamedFrom once the rename is in the history', async () => {
+		const migrations = [
+			...defaultExistingDoConfig.migrations,
+			{ tag: 'v0003', renamed_classes: [{ from: 'OldDO', to: 'NewDO' }] },
+		]
+		const fixture = await doFixture(
+			`
+				bindings: {
+					DO: new DurableObject({ name: 'my-do', className: 'MyDO' }),
+					A: new DurableObject({ name: 'a', className: 'NewDO', renamedFrom: 'OldDO' }),
+					B: new DurableObject({ name: 'b', className: 'NewDO' }),
+				},
+			`,
+			{
+				name: 'test-worker',
+				durable_objects: { bindings: [{ name: 'DO', class_name: 'MyDO' }, { name: 'A', class_name: 'NewDO' }] },
+				migrations,
+			},
+		)
+		try {
+			await fixture.run()
+			expect(fixture.parse().migrations).toEqual(migrations)
+		} finally {
+			await fixture.cleanup()
+		}
+	})
+
 	const existingContainerConfig = {
 		name: 'test-worker',
 		containers: [{ class_name: 'MyContainer', name: 'my-container', image: './Dockerfile' }],

@@ -14,7 +14,7 @@ export const validateDurableObjects = (worker: Worker, existingConfig: Config): 
 	const deletedDurableObjects = worker.options.deletedDurableObjects ?? []
 	const classes = Object.values(worker.options.bindings ?? {}).flatMap(binding => {
 		if (binding instanceof DurableObject) {
-			return [{ className: binding.options.className, renamedFrom: binding.options.renamedFrom }]
+			return [{ className: binding.options.className, renamedFrom: binding.options.renamedFrom || undefined }]
 		}
 		if (binding instanceof Container) {
 			return [{ className: binding.options.className, renamedFrom: undefined }]
@@ -22,19 +22,21 @@ export const validateDurableObjects = (worker: Worker, existingConfig: Config): 
 		return []
 	})
 	const bound = new Set(classes.map(c => c.className))
+	const existingClasses = getLiveDurableObjectClasses(existingConfig.migrations)
 
-	// Bindings are configured one by one, so differing renamedFrom values would make the outcome depend on their order.
+	// Bindings are configured one by one, so for a class that does not exist yet, differing renamedFrom values
+	// would make the outcome depend on their order. For an existing class renamedFrom does nothing.
 	const renamedFromByClass = new Map<string, string | undefined>()
 	for (const { className, renamedFrom } of classes) {
 		const other = renamedFromByClass.get(className)
-		if (renamedFromByClass.has(className) && other !== renamedFrom) {
+		if (renamedFromByClass.has(className) && other !== renamedFrom && !existingClasses.has(className)) {
 			throw new Error(
 				`Worker '${workerName}': Durable Object class '${className}' is bound more than once with a different renamedFrom `
 					+ `(${formatRenamedFrom(other)} and ${formatRenamedFrom(renamedFrom)}). `
 					+ 'Set the same renamedFrom on every DurableObject binding of the class. A Container binding cannot set renamedFrom.',
 			)
 		}
-		renamedFromByClass.set(className, renamedFrom)
+		renamedFromByClass.set(className, other ?? renamedFrom)
 	}
 
 	const renameTargets = new Map<string, string>()
