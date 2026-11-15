@@ -11,7 +11,21 @@ export class Worker implements BindableResource<WorkerState> {
 				dir: string
 				name: string
 				compatibility_flags: CompatibilityFlags[]
-				bindings: Record<string, AnyBindable>
+				/** Entries set to `false`, `null` or `undefined` are skipped, so a binding can be conditional. */
+				bindings: Record<string, AnyBindable | false | null | undefined>
+				/**
+				 * Durable Object classes to delete together with all their stored data. A class
+				 * removed from `bindings` without being listed here fails the run, so data is never
+				 * deleted by accident. Entries for classes that are already deleted do nothing; remove
+				 * the entry before binding a new class with the same name.
+				 */
+				deletedDurableObjects?: string[]
+				/**
+				 * What to do with a Durable Object class that was bound in the previous generated config,
+				 * is no longer bound and is not listed in `deletedDurableObjects`. Unset fails the run,
+				 * `true` deletes the class and its data, `false` keeps the class (for example when it is
+				 * used only through `ctx.exports`).
+				 */
 				deleteDurableObjectsOnRemoval?: boolean
 			}
 			& Partial<
