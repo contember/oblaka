@@ -180,6 +180,7 @@ describe('ResourceProcessor', () => {
 			'oblaka.ts': `
 				import { Worker } from '${path.resolve('src/resources/worker')}'
 				import { DurableObject } from '${path.resolve('src/resources/do')}'
+				import { Container } from '${path.resolve('src/resources/container')}'
 				import { KVNamespace } from '${path.resolve('src/resources/kv')}'
 				export default ({ env }) => new Worker({
 					dir: '${workerDir}'.replace(/\\\\/g, '/'),
@@ -362,6 +363,95 @@ describe('ResourceProcessor', () => {
 		`)
 		try {
 			await expect(fixture.run()).rejects.toThrow("'A' and 'B' are both renamed from 'OldDO'")
+		} finally {
+			await fixture.cleanup()
+		}
+	})
+
+	for (const order of ['without renamedFrom first', 'with renamedFrom first']) {
+		test(`fails when bindings of one class set a different renamedFrom (${order})`, async () => {
+			const plain = `PLAIN: new DurableObject({ name: 'plain', className: 'NewDO' }),`
+			const renamed = `RENAMED: new DurableObject({ name: 'renamed', className: 'NewDO', renamedFrom: 'OldDO' }),`
+			const fixture = await doFixture(`
+				bindings: {
+					DO: new DurableObject({ name: 'my-do', className: 'MyDO' }),
+					${order === 'without renamedFrom first' ? `${plain}${renamed}` : `${renamed}${plain}`}
+				},
+				deleteDurableObjectsOnRemoval: true,
+			`)
+			try {
+				await expect(fixture.run()).rejects.toThrow("Durable Object class 'NewDO' is bound more than once with a different renamedFrom")
+				expect(fixture.applied).toHaveLength(0)
+				expect(fixture.written).toHaveLength(0)
+			} finally {
+				await fixture.cleanup()
+			}
+		})
+	}
+
+	test('renames once when every binding of the class sets the same renamedFrom', async () => {
+		const fixture = await doFixture(`
+			bindings: {
+				DO: new DurableObject({ name: 'my-do', className: 'MyDO' }),
+				A: new DurableObject({ name: 'a', className: 'NewDO', renamedFrom: 'OldDO' }),
+				B: new DurableObject({ name: 'b', className: 'NewDO', renamedFrom: 'OldDO' }),
+			},
+		`)
+		try {
+			await fixture.run()
+			expect(fixture.parse().migrations).toEqual([
+				...defaultExistingDoConfig.migrations,
+				{ tag: 'v0003', renamed_classes: [{ from: 'OldDO', to: 'NewDO' }] },
+			])
+		} finally {
+			await fixture.cleanup()
+		}
+	})
+
+	const existingContainerConfig = {
+		name: 'test-worker',
+		containers: [{ class_name: 'MyContainer', name: 'my-container', image: './Dockerfile' }],
+		durable_objects: {
+			bindings: [
+				{ name: 'DO', class_name: 'MyDO' },
+				{ name: 'CONTAINER', class_name: 'MyContainer' },
+			],
+		},
+		migrations: [
+			{ tag: 'v0001', new_sqlite_classes: ['MyDO'] },
+			{ tag: 'v0002', new_sqlite_classes: ['MyContainer'] },
+		],
+	}
+
+	test('fails when a container is removed without being listed for deletion', async () => {
+		const fixture = await doFixture(`bindings: { DO: new DurableObject({ name: 'my-do', className: 'MyDO' }) },`, existingContainerConfig)
+		try {
+			const run = fixture.run()
+			await expect(run).rejects.toThrow("Durable Object class 'MyContainer' is no longer bound")
+			await expect(run).rejects.toThrow('a Container binding cannot rename a class')
+			expect(fixture.applied).toHaveLength(0)
+			expect(fixture.written).toHaveLength(0)
+		} finally {
+			await fixture.cleanup()
+		}
+	})
+
+	test('deletes a removed container listed in deletedDurableObjects', async () => {
+		const fixture = await doFixture(
+			`
+				bindings: { DO: new DurableObject({ name: 'my-do', className: 'MyDO' }) },
+				deletedDurableObjects: ['MyContainer'],
+			`,
+			existingContainerConfig,
+		)
+		try {
+			await fixture.run()
+			const config = fixture.parse()
+			expect(config.containers).toBeUndefined()
+			expect(config.migrations).toEqual([
+				{ tag: 'v0001', new_sqlite_classes: ['MyDO'] },
+				{ tag: 'v0003', deleted_classes: ['MyContainer'] },
+			])
 		} finally {
 			await fixture.cleanup()
 		}

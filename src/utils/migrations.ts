@@ -57,7 +57,7 @@ export const withDurableObjectClass = <TMigration extends { tag: string }>(
 	renamedFrom?: string,
 ): (TMigration | DurableObjectMigration)[] => {
 	const migrations = config.migrations ?? []
-	const live = getLiveDurableObjectClasses(migrations as DurableObjectMigration[])
+	const live = getLiveDurableObjectClasses(migrations)
 	if (live.has(className)) {
 		return migrations
 	}

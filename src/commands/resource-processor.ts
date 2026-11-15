@@ -3,7 +3,6 @@ import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { Worker } from '../resources'
 import type { Config, DefineFn, Resource } from '../types'
-import type { DurableObjectMigration } from '../utils/migrations'
 import { deleteDurableObjectClasses, getBoundDurableObjectClasses, getRemovedDurableObjects, validateDurableObjects } from './durable-objects'
 import { tryReadFile } from './utils/fs'
 
@@ -118,7 +117,7 @@ export class ResourceProcessor {
 
 		const removedDurableObjects = getRemovedDurableObjects({
 			workerName: worker.options.name,
-			migrations: config.migrations as DurableObjectMigration[] | undefined,
+			migrations: config.migrations,
 			previouslyBound: getBoundDurableObjectClasses(existingConfig),
 			bound: getBoundDurableObjectClasses(config),
 			deletedDurableObjects: deletedDurableObjects ?? [],

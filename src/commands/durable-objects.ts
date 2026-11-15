@@ -23,8 +23,22 @@ export const validateDurableObjects = (worker: Worker, existingConfig: Config): 
 	})
 	const bound = new Set(classes.map(c => c.className))
 
-	const renameTargets = new Map<string, string>()
+	// Bindings are configured one by one, so differing renamedFrom values would make the outcome depend on their order.
+	const renamedFromByClass = new Map<string, string | undefined>()
 	for (const { className, renamedFrom } of classes) {
+		const other = renamedFromByClass.get(className)
+		if (renamedFromByClass.has(className) && other !== renamedFrom) {
+			throw new Error(
+				`Worker '${workerName}': Durable Object class '${className}' is bound more than once with a different renamedFrom `
+					+ `(${formatRenamedFrom(other)} and ${formatRenamedFrom(renamedFrom)}). `
+					+ 'Set the same renamedFrom on every DurableObject binding of the class. A Container binding cannot set renamedFrom.',
+			)
+		}
+		renamedFromByClass.set(className, renamedFrom)
+	}
+
+	const renameTargets = new Map<string, string>()
+	for (const [className, renamedFrom] of renamedFromByClass) {
 		if (!renamedFrom) {
 			continue
 		}
@@ -35,7 +49,7 @@ export const validateDurableObjects = (worker: Worker, existingConfig: Config): 
 			)
 		}
 		const otherTarget = renameTargets.get(renamedFrom)
-		if (otherTarget && otherTarget !== className) {
+		if (otherTarget) {
 			throw new Error(
 				`Worker '${workerName}': Durable Object classes '${otherTarget}' and '${className}' are both renamed from '${renamedFrom}'.`,
 			)
@@ -52,8 +66,8 @@ export const validateDurableObjects = (worker: Worker, existingConfig: Config): 
 	}
 
 	// The same migrations the bindings will produce, so renames are taken into account.
-	let migrations = existingConfig.migrations as DurableObjectMigration[] | undefined
-	for (const { className, renamedFrom } of classes) {
+	let migrations: DurableObjectMigration[] | undefined = existingConfig.migrations
+	for (const [className, renamedFrom] of renamedFromByClass) {
 		migrations = withDurableObjectClass({ migrations }, className, renamedFrom)
 	}
 
@@ -92,7 +106,8 @@ export const getRemovedDurableObjects = (args: {
 		throw new Error(
 			`Worker '${args.workerName}': Durable Object class ${formatClasses(unresolved)} is no longer bound. `
 				+ 'Deleting a class deletes all its stored data, so oblaka will not do it implicitly. '
-				+ 'Add the class to deletedDurableObjects to delete it, set renamedFrom on the new class if it was renamed, '
+				+ 'Add the class to deletedDurableObjects to delete it, set renamedFrom on the new DurableObject binding if it was renamed '
+				+ '(a Container binding cannot rename a class), '
 				+ 'or set deleteDurableObjectsOnRemoval: false to keep it without a binding.',
 		)
 	}
@@ -108,7 +123,7 @@ export const deleteDurableObjectClasses = (config: Config, classes: string[]): C
 	if (classes.length === 0) {
 		return config
 	}
-	const migrations = (config.migrations ?? []) as DurableObjectMigration[]
+	const migrations = config.migrations ?? []
 	const stripped = new Set(classes.filter(c => hasSingleCreation(migrations, c)))
 
 	return {
@@ -148,3 +163,5 @@ const hasSingleCreation = (migrations: DurableObjectMigration[], className: stri
 }
 
 const formatClasses = (classes: string[]) => classes.map(c => `'${c}'`).join(', ')
+
+const formatRenamedFrom = (renamedFrom: string | undefined) => (renamedFrom ? `'${renamedFrom}'` : 'none')
