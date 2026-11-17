@@ -82,7 +82,7 @@ export class CloudflareDeployExecutor implements ResourceApplier {
 			}
 		} else {
 			for (const idString of this.remaining) {
-				const [resource, id] = idString.split(':', 2)
+				const [resource = idString, id] = idString.split(':', 2)
 				if (!this.input.dryRun) {
 					await atomic(async () => {
 						await destroyers[resource]?.({

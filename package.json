@@ -33,6 +33,7 @@
 		"typescript": "^5"
 	},
 	"dependencies": {
+		"@cloudflare/workers-utils": "^0.54.1",
 		"jsonc-parser": "^3.3.1"
 	}
 }

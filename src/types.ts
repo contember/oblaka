@@ -1,4 +1,4 @@
-import type { Unstable_RawEnvironment } from 'wrangler'
+import type { RawEnvironment } from '@cloudflare/workers-utils'
 import type { CloudflareClient } from './client'
 import type { Worker } from './resources'
 
@@ -12,23 +12,7 @@ export interface Context {
 	client: CloudflareClient
 }
 
-export type Config = Unstable_RawEnvironment & {
-	vpc_networks?: Array<{
-		binding: string
-		network_id?: string
-		tunnel_id?: string
-		remote?: boolean
-	}>
-	ai_search_namespaces?: Array<{
-		binding: string
-		namespace: string
-		remote?: boolean
-	}>
-	flagship?: Array<{
-		binding: string
-		app_id: string
-	}>
-}
+export type Config = RawEnvironment
 
 export type ResourceKind =
 	| 'worker'
