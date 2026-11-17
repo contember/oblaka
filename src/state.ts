@@ -55,7 +55,8 @@ export class KVStateStorage implements StateStorage {
 				keys: [key.env],
 			},
 		})
-		return value.values?.[key.env] ? JSON.parse(value.values[key.env]) : { version: 1, resources: {} }
+		const stored = value.values?.[key.env]
+		return stored ? JSON.parse(stored) : { version: 1, resources: {} }
 	}
 
 	async set(key: StateKey, state: State): Promise<void> {

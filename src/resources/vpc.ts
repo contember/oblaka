@@ -24,8 +24,7 @@ export class VpcNetwork implements Bindable {
 				...(args.config.vpc_networks ?? []),
 				{
 					binding: args.binding,
-					network_id: 'networkId' in this.options ? this.options.networkId : undefined,
-					tunnel_id: 'tunnelId' in this.options ? this.options.tunnelId : undefined,
+					...('networkId' in this.options ? { network_id: this.options.networkId } : { tunnel_id: this.options.tunnelId }),
 					remote: this.options.remote ?? true,
 				},
 			],
