@@ -7,6 +7,7 @@
 		// Consumers type-check this raw source under their own flags; keep it clean under the strict ones.
 		"noUncheckedIndexedAccess": true,
 		"noFallthroughCasesInSwitch": true,
+		"noImplicitOverride": true,
 		"skipLibCheck": true,
 		"verbatimModuleSyntax": true,
 		"noEmit": true,
